@@ -702,7 +702,8 @@ fn thresholds(a: &App, root: &JsValue) {
     let t = a.thresholds();
     // the close-paraphrase closeness: a slider, its value beside it while it moves, applied on release
     let row = el(&box_, "label", "auth-threshold", "");
-    let label = el(&row, "span", "auth-threshold-label", "Close paraphrase from");
+    let label = el(&row, "span", "auth-threshold-label", "");
+    el(&label, "span", "auth-threshold-term", "Close paraphrase from");
     tooltip(a, &label, CLOSENESS_TIP);
     let slider = call!(row, createEl, "input");
     call!(slider, setAttribute, "type", "range");
@@ -737,7 +738,8 @@ fn thresholds(a: &App, root: &JsValue) {
     }
     // the shortest run, in words
     let row = el(&box_, "label", "auth-threshold", "");
-    let label = el(&row, "span", "auth-threshold-label", "Verbatim from");
+    let label = el(&row, "span", "auth-threshold-label", "");
+    el(&label, "span", "auth-threshold-term", "Verbatim from");
     tooltip(a, &label, MIN_RUN_TIP);
     let number = call!(row, createEl, "input");
     call!(number, setAttribute, "type", "number");

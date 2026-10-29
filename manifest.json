@@ -1,7 +1,7 @@
 {
   "id": "authenticity",
   "name": "Authenticity",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "minAppVersion": "1.11.4",
   "description": "Check your writing on your computer: AI-likeness (local SlopTotal, optional GPTZero), wording and paraphrases shared with your source notes, and hidden characters. Never rewrites your text.",
   "author": "Gameboard-dev",

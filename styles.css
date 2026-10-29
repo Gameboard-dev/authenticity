@@ -26,8 +26,19 @@ body {
 .auth-panel .auth-char-space { background-color: color-mix(in srgb, var(--color-orange) 40%, transparent); outline: 1px dashed var(--color-orange); }
 .auth-panel .auth-char-dash { background-color: color-mix(in srgb, var(--color-red) 30%, transparent); }
 .auth-panel .auth-char-punct { outline: 1px solid var(--color-orange); background-color: color-mix(in srgb, var(--color-orange) 25%, transparent); }
-.auth-panel .auth-char-lookalike { text-decoration: underline wavy var(--color-red); }
-.auth-panel .auth-char-typo { text-decoration: underline dotted var(--color-purple); }
+/* The legend's underlines are drawn without text-decoration's style and colour (partially supported in the review's
+   browser data): a wave of alternating arcs (two radial gradients, half a period apart) in the theme's red, and a
+   dotted border. */
+.auth-panel .auth-char-lookalike {
+  padding-bottom: 4px;
+  background-image:
+    radial-gradient(circle at 50% 100%, transparent 2.3px, var(--color-red) 2.4px, var(--color-red) 3.6px, transparent 3.7px),
+    radial-gradient(circle at 50% 0, transparent 2.3px, var(--color-red) 2.4px, var(--color-red) 3.6px, transparent 3.7px);
+  background-size: 8px 4px, 8px 4px;
+  background-position: 0 100%, 4px 100%;
+  background-repeat: repeat-x;
+}
+.auth-panel .auth-char-typo { border-bottom: 1px dotted var(--color-purple); padding-bottom: 1px; }
 
 /* The panel. */
 .auth-panel { font-size: var(--font-ui-small); }
@@ -85,7 +96,8 @@ body {
    Source | Kind | Closeness), the words a sentence shares with the source marked in both cells. */
 .auth-thresholds { display: flex; flex-direction: column; gap: 4px; margin: 0 0 0.8em; padding: 6px 8px; border-radius: var(--radius-s); background-color: var(--background-secondary); }
 .auth-threshold { display: flex; align-items: center; gap: 6px; }
-.auth-threshold-label { flex: none; min-width: 9em; text-decoration: underline dotted var(--text-faint); cursor: help; }
+.auth-threshold-label { flex: none; min-width: 9em; cursor: help; }
+.auth-threshold-term { border-bottom: 1px dotted var(--text-faint); padding-bottom: 1px; }
 .auth-threshold input[type="range"] { flex: 1; min-width: 4em; }
 .auth-threshold input[type="number"] { width: 4em; }
 .auth-threshold-value { flex: none; min-width: 2.8em; font-family: var(--font-monospace); }
