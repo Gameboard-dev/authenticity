@@ -1,0 +1,138 @@
+# The plugin's release: built here from the tagged commit, its three files attested (build provenance) and published.
+# Runs on a pushed tag that is a plugin version (x.y.z, the manifest's version), never on a native release's tag
+# (native-x.y.z: native.yml builds those).
+#
+# The plugin is one member of a Rust workspace, obsidian-cargo-lib (the shared crates and the build tool, pack): it is
+# checked out at the commit pinned below, and this repository into it as authenticity/, as docs/building.md says.
+#
+# Attestations: https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+# Check a file with: gh attestation verify main.js --repo Gameboard-dev/authenticity
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # the release
+      id-token: write # the attestations' signing certificate
+      attestations: write
+    env:
+      # obsidian-cargo-lib's commit the plugin is built with (update it when the workspace changes)
+      CARGO_LIB_COMMIT: ae9a2fd1b128a17a1aff359a4440be930152014f
+      # must match the wasm-bindgen crate (core/Cargo.toml)
+      WASM_BINDGEN: 0.2.129
+    steps:
+      - name: The workspace, obsidian-cargo-lib, at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Gameboard-dev/obsidian-cargo-lib
+          ref: ${{ env.CARGO_LIB_COMMIT }}
+          path: workspace
+          persist-credentials: false
+
+      - name: This plugin, at the tag, as the workspace's authenticity/
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: workspace/authenticity
+          persist-credentials: false
+
+      - name: The tag is the manifest's version, and versions.json and the release notes have it
+        working-directory: workspace/authenticity
+        run: |
+          set -eu
+          v="$(jq -r .version manifest.json)"
+          test "$v" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME, manifest.json $v"; exit 1; }
+          jq -e --arg v "$v" 'has($v)' versions.json > /dev/null || { echo "versions.json has no $v"; exit 1; }
+          test -s ".github/release-notes/$v.md" || { echo "no .github/release-notes/$v.md"; exit 1; }
+
+      - name: Rust (stable, with the WebAssembly target) and wasm-bindgen's CLI
+        run: |
+          set -eu
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+          cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+
+      # The workspace lists its members by glob ("*/core", "*/schema", ...) for whichever plugins are checked out beside
+      # it; here only this plugin is, and Cargo reads a glob that matches nothing as a literal path and fails. So the
+      # members are narrowed to the globs that match something in this checkout.
+      - name: Only the workspace members present here
+        working-directory: workspace
+        run: |
+          python3 - <<'PY'
+          import glob, re
+          s = open("Cargo.toml", encoding="utf-8").read()
+          m = re.search(r'^members\s*=\s*\[(.*?)\]', s, re.M | re.S)
+          names = re.findall(r'"([^"]+)"', m.group(1))
+          kept = [n for n in names if glob.glob(n + "/Cargo.toml")]
+          s = s[:m.start(1)] + ", ".join('"%s"' % n for n in kept) + s[m.end(1):]
+          open("Cargo.toml", "w", encoding="utf-8").write(s)
+          print("members:", kept)
+          PY
+
+      - name: The plugin's tests
+        working-directory: workspace
+        run: cargo test --release -p authenticity-core -p authenticity-similar
+
+      - name: Build the release's files
+        working-directory: workspace
+        run: |
+          set -eu
+          cargo build --release -p pack
+          # SIMD and source paths remapped, so no path of the build computer is inside the module. One flag per
+          # element, separated by the unit separator; the most general prefix first (rustc applies the last that
+          # matches).
+          sep="$(printf '\037')"
+          rustup_home="$(rustup show home)"
+          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          flags="-Ctarget-feature=+simd128"
+          for map in "$HOME=~" "$rustup_home=rustup" "$cargo_home/registry/src=cargo/registry" "$cargo_home/git/checkouts=cargo/git" "$PWD=src"; do
+            flags="$flags$sep--remap-path-prefix=$map"
+          done
+          CARGO_ENCODED_RUSTFLAGS="$flags" ./target/release/pack authenticity --release "$RUNNER_TEMP/release"
+
+      - name: Only the plugin's three files, and no path of the build computer in them
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/release"
+          test "$(ls | sort | tr '\n' ' ')" = "main.js manifest.json styles.css " || { ls -la; exit 1; }
+          node -e '
+            const fs = require("fs");
+            const js = fs.readFileSync("main.js", "utf8");
+            const m = js.match(/const WASM = "([^"]+)"/);
+            if (!m) { console.error("main.js has no module inlined"); process.exit(1); }
+            const text = js + Buffer.from(m[1], "base64").toString("latin1");
+            for (const p of [process.env.HOME, process.env.GITHUB_WORKSPACE, "/home/runner"]) {
+              if (p && text.includes(p)) { console.error("a path of the build computer is inside: " + p); process.exit(1); }
+            }
+          '
+          sha256sum main.js manifest.json styles.css
+
+      - name: Attest the files' build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/main.js
+            ${{ runner.temp }}/release/manifest.json
+            ${{ runner.temp }}/release/styles.css
+
+      - name: Publish the release with exactly those files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          files="$RUNNER_TEMP/release/main.js $RUNNER_TEMP/release/manifest.json $RUNNER_TEMP/release/styles.css"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $files
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Authenticity $GITHUB_REF_NAME" \
+              --notes-file "workspace/authenticity/.github/release-notes/$GITHUB_REF_NAME.md" $files
+          fi

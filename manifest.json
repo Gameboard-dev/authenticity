@@ -1,0 +1,10 @@
+{
+  "id": "authenticity",
+  "name": "Authenticity",
+  "version": "0.3.0",
+  "minAppVersion": "1.11.4",
+  "description": "Writing checks on your computer: AI-likeness scores from a local detector (SlopTotal; GPTZero optional, with your key), wording and close paraphrases shared with your source notes, pasted hidden characters cleaned up. Never rewrites your text.",
+  "author": "Gameboard-dev",
+  "authorUrl": "https://github.com/Gameboard-dev",
+  "isDesktopOnly": true
+}

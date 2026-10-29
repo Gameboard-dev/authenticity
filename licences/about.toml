@@ -1,0 +1,321 @@
+# cargo-about's settings for the third-party licence files of Authenticity's plugin and native programs
+# (https://embarkstudios.github.io/cargo-about/). generate.py in this folder runs it for each program.
+
+# Only these licences are accepted. A crate under any other licence makes the generation fail. All of them allow
+# distribution in a program released under the MIT licence, Authenticity's.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    # libbz2-rs-sys (through zip, used by candle-core): the bzip2 licence, a BSD-style permissive licence
+    "bzip2-1.0.6",
+]
+
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# The workspace's own crates (publish = false: the plugin, the server, obsidian-kit, native-kit) are not third-party:
+# they are under the MIT licence in LICENSE.
+private = { ignore = true }
+# Packaging quirks cargo-about knows how to correct (the licence files of ring, rustls and chrono).
+workarounds = ["ring", "rustls", "chrono"]
+
+# Clarifications: crates whose package carries no licence file (or one cargo-about cannot read), with the file taken
+# from their own repository at the commit they were published from (`git`), or from the package (`files`). Each file is
+# pinned by its SHA-256, so a changed file fails the check instead of being copied unread. A dual-licensed crate is
+# clarified to the licence whose text exists. faer, faer-traits and zune-inflate cannot be clarified this way (faer is
+# on Codeberg, which cargo-about cannot fetch from; zune-inflate names no repository): their notices are in
+# additional.txt.
+
+# rmcp's LICENSE: Apache-2.0 for new contributions, MIT for older ones not yet relicensed (its own preamble).
+[rmcp.clarify]
+license = "Apache-2.0 AND MIT"
+[[rmcp.clarify.files]]
+path = "LICENSE"
+license = "Apache-2.0"
+end = "END OF TERMS AND CONDITIONS"
+checksum = "6c340d631a813f63edc52405453967f8f9f46c10255d5752cd41850b48ab42d3"
+[[rmcp.clarify.files]]
+path = "LICENSE"
+license = "MIT"
+start = "Copyright (c) 2024-2025 Model Context Protocol"
+end = "SOFTWARE."
+checksum = "a403f7ef905cd68df03a304a8c169dc7b3c5c50e4dba17c0ce8c58421055bd43"
+
+# oar-ocr-vl (a git dependency): the Apache-2.0 LICENSE at its repository's root.
+[oar-ocr-vl.clarify]
+license = "Apache-2.0"
+[[oar-ocr-vl.clarify.git]]
+path = "LICENSE"
+checksum = "8a7ec3e5de8c98ead49da38ca820edb995102e95093da040b304413e37b6c607"
+
+# brotli-decompressor (BSD-3-Clause OR MIT): its package holds the BSD-3-Clause text only.
+[brotli-decompressor.clarify]
+license = "BSD-3-Clause"
+[[brotli-decompressor.clarify.files]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+# exr: LICENSE.md holds exrs' and OpenEXR's BSD-3-Clause notices.
+[exr.clarify]
+license = "BSD-3-Clause"
+[[exr.clarify.files]]
+path = "LICENSE.md"
+checksum = "97e4d3aa7a9e8ac31979c16ca8bb2b628a9cb72c3362185ad2bf4ad77f43551f"
+
+# libm: LICENSE.txt holds the MIT licence and the notices of musl and the code it derives from.
+[libm.clarify]
+license = "MIT"
+[[libm.clarify.files]]
+path = "LICENSE.txt"
+checksum = "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"
+
+# faer: MIT (its text is in additional.txt), with algorithms ported from Eigen (MPL-2.0), LAPACK and SuiteSparse
+# (BSD-3-Clause), whose notices its package carries.
+[faer.clarify]
+license = "MIT AND MPL-2.0 AND BSD-3-Clause"
+[[faer.clarify.files]]
+path = "COPYING.EIGEN.MPL2"
+license = "MPL-2.0"
+checksum = "1905e1009a9d8444c2573d0f9e96d34188a6f098a5c359694f2d9043a7445323"
+[[faer.clarify.files]]
+path = "COPYING.LAPACK.BSD"
+license = "BSD-3-Clause"
+checksum = "7e4bc07b4d1691c7b503816c232467ac808bdb3f260a7f4f203ca0e3e44311ad"
+[[faer.clarify.files]]
+path = "COPYING.SUITE_SPARSE.AMD.BSD"
+license = "BSD-3-Clause"
+checksum = "748448bad56ee129a9222d63da70513428b41e9ff804b401a0be37a7b5151bf9"
+[[faer.clarify.files]]
+path = "COPYING.SUITE_SPARSE.COLAMD.BSD"
+license = "BSD-3-Clause"
+checksum = "0e92b7bb3e216b8a4d1357b3d828043a4f758f762b2abc30b3440cf78063f80f"
+
+# Microsoft's windows-rs crates (MIT OR Apache-2.0): the MIT text is in each package as `license-mit`, a name
+# cargo-about does not look for.
+[windows.clarify]
+license = "MIT"
+[[windows.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-collections.clarify]
+license = "MIT"
+[[windows-collections.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-core.clarify]
+license = "MIT"
+[[windows-core.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-future.clarify]
+license = "MIT"
+[[windows-future.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-implement.clarify]
+license = "MIT"
+[[windows-implement.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-interface.clarify]
+license = "MIT"
+[[windows-interface.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-link.clarify]
+license = "MIT"
+[[windows-link.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-numerics.clarify]
+license = "MIT"
+[[windows-numerics.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-registry.clarify]
+license = "MIT"
+[[windows-registry.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-result.clarify]
+license = "MIT"
+[[windows-result.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-strings.clarify]
+license = "MIT"
+[[windows-strings.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-sys.clarify]
+license = "MIT"
+[[windows-sys.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-threading.clarify]
+license = "MIT"
+[[windows-threading.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows_x86_64_msvc.clarify]
+license = "MIT"
+[[windows_x86_64_msvc.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# Crates whose package has no licence file: the file from their repository, at the commit in their .cargo_vcs_info.json.
+# simd_helpers' repository had no LICENSE when 0.1.0 was published; its MIT text is from the commit that added it.
+# A clarification applies to every version of a crate: equator 0.6 and equator-macro 0.6 carry their own LICENSE, and
+# the warning that their repository has no LICENSE at their commit is expected (their own file is then used).
+# This file covers both programs and is kept in step with the other plugins' copies; a warning that a crate is not in
+# the graph is expected too.
+
+[alloc-stdlib.clarify]
+license = "BSD-3-Clause"
+[[alloc-stdlib.clarify.git]]
+path = "LICENSE"
+checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae"
+
+[candle-core.clarify]
+license = "MIT"
+[[candle-core.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[candle-flash-attn.clarify]
+license = "MIT"
+[[candle-flash-attn.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[candle-kernels.clarify]
+license = "MIT"
+[[candle-kernels.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[candle-nn.clarify]
+license = "MIT"
+[[candle-nn.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[candle-transformers.clarify]
+license = "MIT"
+[[candle-transformers.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[docling-core.clarify]
+license = "MIT"
+[[docling-core.clarify.git]]
+path = "LICENSE"
+checksum = "35751e32194868f473a12681011d9efef674ac9be4861974eadbb2c4f7ddd30a"
+
+[docling-pdf.clarify]
+license = "MIT"
+[[docling-pdf.clarify.git]]
+path = "LICENSE"
+checksum = "35751e32194868f473a12681011d9efef674ac9be4861974eadbb2c4f7ddd30a"
+
+[equator.clarify]
+license = "MIT"
+[[equator.clarify.git]]
+path = "LICENSE"
+checksum = "97d3424e347e8fa236806725ce9837bb453d4dfc9ce1d4733fd6023a8038000a"
+
+[equator-macro.clarify]
+license = "MIT"
+[[equator-macro.clarify.git]]
+path = "LICENSE"
+checksum = "97d3424e347e8fa236806725ce9837bb453d4dfc9ce1d4733fd6023a8038000a"
+
+[nano-gemm.clarify]
+license = "MIT"
+[[nano-gemm.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[nano-gemm-c32.clarify]
+license = "MIT"
+[[nano-gemm-c32.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[nano-gemm-c64.clarify]
+license = "MIT"
+[[nano-gemm-c64.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[nano-gemm-core.clarify]
+license = "MIT"
+[[nano-gemm-core.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[nano-gemm-f32.clarify]
+license = "MIT"
+[[nano-gemm-f32.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[nano-gemm-f64.clarify]
+license = "MIT"
+[[nano-gemm-f64.clarify.git]]
+path = "LICENSE"
+checksum = "310b7323adcc27fc94c45d1155b6c89c17986576d790f766a04c855662428a7c"
+
+[profiling.clarify]
+license = "MIT"
+[[profiling.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+
+[profiling-procmacros.clarify]
+license = "MIT"
+[[profiling-procmacros.clarify.git]]
+path = "LICENSE-MIT"
+checksum = "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+
+[pulp-wasm-simd-flag.clarify]
+license = "MIT"
+[[pulp-wasm-simd-flag.clarify.git]]
+path = "LICENSE"
+checksum = "d64f878c89bd5f1e5ada7e4aad57690b122727cf5229b7b87ea1980c188da1d9"
+
+[rhai_codegen.clarify]
+license = "MIT"
+[[rhai_codegen.clarify.git]]
+path = "LICENSE-MIT.txt"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+[simd_helpers.clarify]
+license = "MIT"
+override-git-commit = "82040194cd05affb060bf94d6f19f82a771d07fb"
+[[simd_helpers.clarify.git]]
+path = "LICENSE"
+checksum = "d69f24ad84ec2ade64c0b68bdb31b41170e997b158370342056918329cc9af1e"
+

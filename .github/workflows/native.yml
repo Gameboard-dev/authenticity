@@ -1,0 +1,117 @@
+# The native programs' release (authenticity-helper, authenticity-mcp, check-overlap): built on Windows from the
+# tagged commit, attested (build provenance) and published as a release that is never marked latest, so the plugin's
+# release stays the one Obsidian reads. Runs on a pushed tag native-x.y.z whose version is the manifest's.
+#
+# Check a file with: gh attestation verify authenticity-helper.exe --repo Gameboard-dev/authenticity
+name: Native release
+
+on:
+  push:
+    tags:
+      - "native-[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: windows-2025
+    permissions:
+      contents: write # the release
+      id-token: write # the attestations' signing certificate
+      attestations: write
+    env:
+      # obsidian-cargo-lib's commit (native-kit) the programs are built with
+      CARGO_LIB_COMMIT: ae9a2fd1b128a17a1aff359a4440be930152014f
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: The workspace, obsidian-cargo-lib, at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Gameboard-dev/obsidian-cargo-lib
+          ref: ${{ env.CARGO_LIB_COMMIT }}
+          path: workspace
+          persist-credentials: false
+
+      - name: This plugin, at the tag, as the workspace's authenticity/
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: workspace/authenticity
+          persist-credentials: false
+
+      - name: The tag is native- and the manifest's version, and the release notes have it
+        working-directory: workspace/authenticity
+        run: |
+          $v = (Get-Content manifest.json -Raw | ConvertFrom-Json).version
+          if ("native-$v" -ne $env:GITHUB_REF_NAME) { throw "tag $env:GITHUB_REF_NAME, manifest.json $v" }
+          if (-not (Test-Path ".github/release-notes/native-$v.md")) { throw "no .github/release-notes/native-$v.md" }
+
+      - name: Rust (stable)
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: The native programs' tests
+        working-directory: workspace/authenticity/native
+        run: cargo test --release --locked
+
+      - name: Build the programs (x86-64-v3, static C runtime, source paths remapped, no PDB path)
+        working-directory: workspace/authenticity/native
+        run: |
+          $ws = (Resolve-Path ../..).Path
+          $rustup = (rustup show home).Trim()
+          $cargo = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+          $sep = [char]0x1f
+          $flags = @("-Ctarget-cpu=x86-64-v3", "-Ctarget-feature=+crt-static", "-Clink-arg=/PDBALTPATH:%_PDB%")
+          foreach ($map in @("$env:USERPROFILE=~", "$rustup=rustup", "$cargo\registry\src=cargo/registry", "$cargo\git\checkouts=cargo/git", "$ws=src")) {
+            $flags += "--remap-path-prefix=$map"
+          }
+          $env:CARGO_ENCODED_RUSTFLAGS = $flags -join $sep
+          cargo build --release --locked --target-dir target/dist
+          $out = Join-Path $env:RUNNER_TEMP "native"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          foreach ($b in "authenticity-helper", "authenticity-mcp", "check-overlap") {
+            Copy-Item "target/dist/release/$b.exe" (Join-Path $out "$b.exe")
+          }
+          Copy-Item ../LICENSE (Join-Path $out "authenticity-native-LICENSE.txt")
+          Copy-Item ../licences/native.txt (Join-Path $out "authenticity-native-THIRD-PARTY-LICENSES.txt")
+
+      - name: No path of the build computer in the programs; checksums
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "native"
+          foreach ($b in "authenticity-helper", "authenticity-mcp", "check-overlap") {
+            $f = Join-Path $out "$b.exe"
+            $text = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($f))
+            foreach ($p in @($env:USERPROFILE, $env:GITHUB_WORKSPACE, "runneradmin")) {
+              if ($p -and $text.Contains($p)) { throw "a path of the build computer is inside $b.exe: $p" }
+            }
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+            Set-Content -NoNewline -Path "$f.sha256" -Value "$h *$b.exe`n"
+            Write-Output "$h  $b.exe"
+          }
+
+      - name: Attest the files' build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/native/authenticity-helper.exe
+            ${{ runner.temp }}/native/authenticity-mcp.exe
+            ${{ runner.temp }}/native/check-overlap.exe
+
+      - name: Publish the native release (never marked latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "native"
+          $files = Get-ChildItem $out | ForEach-Object { $_.FullName }
+          gh release view $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --clobber @files
+          } else {
+            $global:LASTEXITCODE = 0
+            gh release create $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --verify-tag --latest=false `
+              --title "Authenticity native programs $($env:GITHUB_REF_NAME.Substring(7))" `
+              --notes-file "workspace/authenticity/.github/release-notes/$env:GITHUB_REF_NAME.md" @files
+          }

@@ -1,0 +1,16 @@
+[package]
+name = "authenticity-similar"
+version = "0.1.0"
+edition = "2021"
+description = "Authenticity's offline close-copying check: the text a check reads (what is left out, its words with their places, its sentences), the library's word-sequence (shingle) index, kept up to date note by note, and the matcher of verbatim and near-verbatim runs; shared by the plugin (WebAssembly), its MCP server and check-overlap"
+publish = false
+license = "MIT"
+
+
+[dependencies]
+# Regular expressions (<https://docs.rs/regex>, MIT/Apache-2.0): what a draft's markdown leaves out of the check.
+# Linear time, so a long text never makes one slow.
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode"] }
+# Compatibility decomposition (ligatures, full-width forms) and accents, so a PDF's "ﬁ" or "é" matches a typed "fi"
+# or "e" (<https://docs.rs/unicode-normalization>, MIT/Apache-2.0).
+unicode-normalization = "0.1"

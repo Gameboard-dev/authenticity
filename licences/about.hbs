@@ -1,0 +1,30 @@
+PART 1. RUST CRATES
+
+The Rust crates this program is built from, with their licences. Where a crate offers a choice of licences, the
+licence named is the one Authenticity takes. A few crates listed are used only while compiling (procedural macros) and
+leave nothing in the program; they are listed so that nothing is missed.
+
+Summary
+{{#each overview}}
+  {{{name}}} ({{{id}}}): {{count}} crate(s)
+{{/each}}
+
+Crates
+{{#each crates}}
+  {{{package.name}}} {{{package.version}}}{{#if package.repository}}  {{{package.repository}}}{{/if}}
+{{/each}}
+
+Licence texts, each with the crates it covers. A text marked "(standard text)" is the licence's canonical wording,
+used where no copy in the crate's package could be matched.
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{{id}}}){{#unless source_path}} (standard text){{/unless}}
+Used by:
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}}  {{{crate.repository}}}{{/if}}
+{{/each}}
+--------------------------------------------------------------------------------
+
+{{{text}}}
+{{/each}}
