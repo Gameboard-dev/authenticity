@@ -160,26 +160,6 @@ fn typographic(c: char) -> Option<&'static str> {
     })
 }
 
-/// Where an em dash stood: a comma and a space; nothing before punctuation or at a line's end; "- " at a line's start;
-/// "-" alone in a table cell. Spaces before it are removed; spaces after it were skipped by the caller.
-fn dash_out(out: &mut String, next: Option<char>) {
-    while out.ends_with(' ') {
-        out.pop();
-    }
-    if out.is_empty() || out.ends_with('\n') {
-        out.push_str("- ");
-    } else if out.ends_with('|') && matches!(next, Some('|') | None) {
-        out.push_str(" - ");
-    } else if !matches!(next, None | Some('\n')) && !next.is_some_and(|c| ".,;:!?)]}|".contains(c)) {
-        if !out.ends_with(',') && !out.ends_with('(') {
-            out.push(',');
-        }
-        out.push(' ');
-    } else if next == Some('|') {
-        out.push(' ');
-    }
-}
-
 /// Whether the text around place `i` of a line is Latin: the nearest letter before it (or, with none, after it).
 fn latin_around(cs: &[char], i: usize) -> bool {
     let before = cs[..i].iter().rev().find(|c| c.is_alphabetic() && plain_letter(**c).is_none());
@@ -192,8 +172,7 @@ fn plain_neighbour(c: Option<&char>) -> bool {
     c.is_none_or(|c| c.is_ascii() || is_latin(*c) || c.is_whitespace())
 }
 
-/// One replacement in the text: [from, to) (UTF-16, as the editor counts) becomes `insert` (empty: removed). An em
-/// dash's replacement also takes the spaces beside it, so its range can be wider than the character.
+/// One replacement in the text: [from, to) (UTF-16, as the editor counts) becomes `insert` (empty: removed).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Edit {
     pub from: u32,
@@ -210,16 +189,13 @@ fn step(cs: &[char], i: usize, in_latin_word: &[bool], out: &mut String, o: Opti
     let prev = if i > 0 { cs.get(i - 1) } else { None };
     let next = cs.get(i + 1);
     if o.typography {
-        let spaced = prev.is_none_or(|p| *p == ' ') && next.is_none_or(|d| *d == ' ');
-        if matches!(c, '\u{2014}' | '\u{2015}' | '\u{2E3A}' | '\u{2E3B}' | '\u{FE58}' | '\u{FE31}') || (c == '\u{2013}' && spaced) {
-            let mut j = i + 1;
-            while cs.get(j) == Some(&' ') {
-                j += 1;
-            }
-            let kept = out.trim_end_matches(' ').len();
-            dash_out(out, cs.get(j).copied());
-            return (j, Some(Change::Typographic), kept);
+        // an em dash (and its relatives: the horizontal bar, the two- and three-em dashes, the small and vertical em
+        // dashes) becomes "--" where it stands, the spaces around it as they were
+        if matches!(c, '\u{2014}' | '\u{2015}' | '\u{2E3A}' | '\u{2E3B}' | '\u{FE58}' | '\u{FE31}') {
+            out.push_str("--");
+            return (i + 1, Some(Change::Typographic), start);
         }
+        // an en dash is a hyphen-minus wherever it stands
         if matches!(c, '\u{2013}' | '\u{FE32}') {
             out.push('-');
             return (i + 1, Some(Change::Typographic), start);
@@ -434,20 +410,26 @@ mod tests {
         assert_eq!(out, t, "curly quotes, dashes, ellipsis, minus, bullets, arrows, primes, accents, ×, ° all kept");
         assert_eq!(n.total(), 0);
         let (out, n) = clean(t, ALL);
-        assert_eq!(out, "\"q\" 's' it's wait... a, b 3-5 -2 - x -> y 5' café × 2 °C naïve");
+        assert_eq!(out, "\"q\" 's' it's wait... a -- b 3-5 -2 - x -> y 5' café × 2 °C naïve");
         assert_eq!(n.of(Change::Typographic), 12);
     }
 
     #[test]
     fn dashes_with_typography() {
         let d = |s: &str| clean(s, ALL).0;
-        assert_eq!(d("The model — small and fast — wins."), "The model, small and fast, wins.");
-        assert_eq!(d("It works—mostly."), "It works, mostly.");
-        assert_eq!(d("It works — ."), "It works.");
-        assert_eq!(d("A list:\n— first"), "A list:\n- first");
+        // an em dash is "--" where it stands, with the spaces around it as they were
+        assert_eq!(d("a — b"), "a -- b");
+        assert_eq!(d("a—b"), "a--b");
+        assert_eq!(d("The model — small and fast — wins."), "The model -- small and fast -- wins.");
+        assert_eq!(d("It works—mostly."), "It works--mostly.");
+        assert_eq!(d("A list:\n— first"), "A list:\n-- first");
+        assert_eq!(d("| a | — |"), "| a | -- |");
+        // its relatives too: the horizontal bar, the two- and three-em dashes, the small and vertical em dashes
+        assert_eq!(d("x \u{2015} y \u{2E3A} z \u{2E3B} w\u{FE58}v\u{FE31}u"), "x -- y -- z -- w--v--u");
+        // an en dash is "-" wherever it stands; the figure dash and the minus sign too
         assert_eq!(d("pp. 3–5 and a well–known fact"), "pp. 3-5 and a well-known fact");
-        assert_eq!(d("one – two"), "one, two");
-        assert_eq!(d("| a | — |"), "| a | - |");
+        assert_eq!(d("one – two"), "one - two");
+        assert_eq!(d("tel 555\u{2012}0100, \u{2212}2"), "tel 555-0100, -2");
         assert_eq!(d("plain -- and --- stay"), "plain -- and --- stay");
     }
 
@@ -496,11 +478,11 @@ mod tests {
         assert_eq!(edit_at(t, 4, KEEP), Some(Edit { from: 4, to: 5, insert: String::new(), change: Change::Invisible }));
         assert_eq!(edit_at(t, 8, KEEP).map(|e| e.insert), Some("a".into()));
         assert_eq!(edit_at(t, 0, KEEP), None, "a plain letter has none");
-        // a styled letter is two UTF-16 units; an em dash takes the spaces beside it, and only with typography on
+        // a styled letter is two UTF-16 units; an em dash is "--" in its own place, and only with typography on
         let t = "𝐁 and a — b";
         assert_eq!(edit_at(t, 0, KEEP), Some(Edit { from: 0, to: 2, insert: "B".into(), change: Change::Letter }));
         assert_eq!(edit_at(t, 9, KEEP), None);
-        assert_eq!(edit_at(t, 9, ALL), Some(Edit { from: 8, to: 11, insert: ", ".into(), change: Change::Typographic }));
+        assert_eq!(edit_at(t, 9, ALL), Some(Edit { from: 9, to: 10, insert: "--".into(), change: Change::Typographic }));
         // in code it is left alone
         assert_eq!(edit_at("`a\u{200B}b`", 2, KEEP), None);
     }

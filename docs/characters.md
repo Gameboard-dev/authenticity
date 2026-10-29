@@ -34,6 +34,9 @@ how many characters of which kinds will change; one undo puts them back.
 - Look-alike letters become Latin ones.
 - Typographic characters (curly quotes, en and em dashes, the ellipsis character, primes, the minus sign, bullets and
   arrows) are replaced only with *Replace typographic characters too* on.
+- Dashes: an em dash becomes `--` where it stands, with the spaces around it as they were ("a — b" becomes "a -- b",
+  "a—b" becomes "a--b"); so do the horizontal bar, the two- and three-em dashes and the small and vertical em dashes.
+  An en dash, a figure dash and the minus sign become `-`.
 - Accented letters, ×, ° and other symbols are never replaced.
 
 ## Stepping through them
@@ -44,7 +47,7 @@ become.
 
 - **OK (Enter)** replaces it (one undo), **Skip (Esc)** skips it, **Stop** ends.
 - Typographic characters are always offered their plain equivalent here (curly quotes become straight, the ellipsis
-  three full stops, an en dash `-`), since you decide one at a time; *Replace typographic characters too* governs only
+  three full stops, an em dash `--`, an en dash `-`), since you decide one at a time; *Replace typographic characters too* governs only
   the bulk command.
 - Where there is no automatic replacement (a Cyrillic or Greek letter with no Latin twin, a styled Greek letter, the
   ʻokina), a box takes the one character to put there.

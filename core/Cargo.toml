@@ -1,6 +1,6 @@
 [package]
 name = "authenticity-core"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Authenticity, an Obsidian plugin in Rust: offline writing checks: AI-writing scores from a local SlopTotal (GPTZero optional), wording and close paraphrase shared with the library notes, and AI characters revealed"
 publish = false

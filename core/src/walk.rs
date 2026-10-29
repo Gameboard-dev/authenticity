@@ -87,8 +87,8 @@ impl Walk {
         }
     }
 
-    /// Enter: the current one was replaced, [from, to) by `insert`. Those inside that range went with it (an em dash
-    /// takes the spaces beside it); those after it move by the change in length.
+    /// Enter: the current one was replaced, [from, to) by `insert`. Those inside that range went with it; those after it
+    /// move by the change in length (an em dash's "--" is one unit longer).
     pub fn replaced(&mut self, from: u32, to: u32, insert: &str) {
         self.queue.pop_front();
         let grew = insert.encode_utf16().count() as i64 - (to - from) as i64;
@@ -160,8 +160,7 @@ pub fn prompt(text: &str, o: &Occurrence) -> Prompt {
         _ => name,
     };
     let what = format!("{shown} (U+{:04X})", o.code);
-    // the en dash's plain equivalent is the hyphen-minus wherever it stands (the bulk command, with typography on,
-    // makes a spaced one a comma, as an em dash)
+    // the en dash's plain equivalent is the hyphen-minus wherever it stands, as in the bulk command
     let found = if o.code == 0x2013 {
         Some(Edit { from: o.from, to: o.to, insert: "-".into(), change: clean::Change::Typographic })
     } else {
@@ -234,13 +233,14 @@ mod tests {
         // a character typed in: two UTF-16 units for one, so those after it move on by one
         w.replaced(11, 12, "\u{1F600}");
         assert_eq!(w.left(), 2);
-        // an em dash's replacement takes the no-break space before it, so that one goes too
-        let t = "a\u{00A0}\u{2014} b";
-        let mut w = Walk { queue: [(2, 3, 0x2014, Kind::Dash), (1, 2, 0x00A0, Kind::Space)].map(|(from, to, code, kind)| Occurrence { from, to, code, kind, name: "x" }).into() };
+        // an em dash becomes two characters in its place: the no-break space before it stays, and those after move on
+        let t = "a\u{00A0}\u{2014} b\u{200B}";
+        let mut w = Walk { queue: [(2, 3, 0x2014, Kind::Dash), (1, 2, 0x00A0, Kind::Space), (5, 6, 0x200B, Kind::Hidden)].map(|(from, to, code, kind)| Occurrence { from, to, code, kind, name: "x" }).into() };
         let e = prompt(t, w.current().unwrap()).edit.unwrap();
-        assert_eq!((e.from, e.to, e.insert.as_str()), (1, 4, ", "));
+        assert_eq!((e.from, e.to, e.insert.as_str()), (2, 3, "--"));
         w.replaced(e.from, e.to, &e.insert);
-        assert_eq!(w.left(), 0);
+        assert_eq!(w.left(), 2);
+        assert_eq!(w.current().map(|o| (o.from, o.to)), Some((1, 2)));
     }
 
     #[test]
@@ -263,7 +263,8 @@ mod tests {
         // typographic characters: always offered here, whatever the bulk command's setting
         assert_eq!(prompt(text, &at(12, Kind::Typographic, "curly double quote")).line, "Curly double quote (U+201C) \u{2192} \"");
         let d = prompt(text, &at(22, Kind::Dash, "em dash"));
-        assert_eq!(d.line, "Em dash (U+2014) \u{2192} \u{201c}, \u{201d} (with the spaces beside it)");
+        assert_eq!(d.line, "Em dash (U+2014) \u{2192} --");
+        assert_eq!(d.edit.as_ref().map(|e| (e.from, e.to, e.insert.as_str())), Some((22, 23, "--")), "in its own place, the spaces kept");
         // the en dash is a hyphen-minus here, between digits or between spaces alike
         for at_ in [32, 39] {
             let e = prompt(text, &at(at_, Kind::Dash, "en dash"));

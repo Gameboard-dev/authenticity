@@ -47,7 +47,7 @@ The matches are filtered by the user's thresholds, as the Plagiarism pane shows 
 unloads. It lets local tools see whether Authenticity is enabled, and holds no text:
 
 ```json
-{ "name": "authenticity", "version": "0.3.0", "api": 1, "enabled": true, "updated": 1793241580,
+{ "name": "authenticity", "version": "0.3.1", "api": 1, "enabled": true, "updated": 1793241580,
   "features": ["ai_score", "similarity", "invisible_characters"],
   "mcp": { "server": "authenticity", "tools": ["check_ai", "explain_ai", "check_similarity", "reveal_characters", "check_overlap", "status", "list_notes", "ai_results", "similarity_results", "unusual_characters"] },
   "port": 8791 }
