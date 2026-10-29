@@ -180,13 +180,20 @@ pub fn note_text(a: &App, path: &str) -> Option<String> {
     Some(str(&call!(get(&get(&leaf, "view"), "editor"), getValue)))
 }
 
-/// Draw the panes that are open.
+/// Draw the panes that are open. A pane is drawn afresh each time (while a check runs, at every step), so its scroll
+/// position is kept across the drawing: emptying it would clamp the position to the empty pane's height, and the
+/// view would jump. Only a Show in … request scrolls (once, to its rows: mark_focused).
 pub fn render(a: &App) {
+    let keep = |content: &JsValue, draw: &dyn Fn(&JsValue)| {
+        let top = get(content, "scrollTop");
+        draw(content);
+        set(content, "scrollTop", top);
+    };
     if let Some(v) = &a.panes.ai {
-        render_ai(a, &get(v, "contentEl"));
+        keep(&get(v, "contentEl"), &|c| render_ai(a, c));
     }
     if let Some(v) = &a.panes.plagiarism {
-        render_plagiarism(a, &get(v, "contentEl"));
+        keep(&get(v, "contentEl"), &|c| render_plagiarism(a, c));
     }
 }
 
@@ -218,11 +225,16 @@ fn head(a: &App, root: &JsValue, pane: Pane) -> String {
         }
     }
     button(&row, if a.settings.show_marks { "Hide marks" } else { "Show marks" }, crate::app::toggle_marks);
-    if let Some(activity) = &a.activity {
-        let row = el(root, "div", "auth-activity", "");
-        el(&row, "span", "auth-muted", activity);
-        let b = button(&row, "Cancel", crate::app::cancel_check);
-        tooltip(a, &b, "Stop this check now: nothing more is sent to SlopTotal or read from the library, and nothing from the check is kept. SlopTotal keeps running (Stop SlopTotal now stops it).");
+    // what is running: always one line of the same height, so what is below it does not move when a check starts
+    // or ends
+    let row = el(root, "div", "auth-activity", "");
+    match &a.activity {
+        Some(activity) => {
+            el(&row, "span", "auth-muted auth-activity-text", activity);
+            let b = button(&row, "Cancel", crate::app::cancel_check);
+            tooltip(a, &b, "Stop this check now: nothing more is sent to SlopTotal or read from the library, and nothing from the check is kept. SlopTotal keeps running (Stop SlopTotal now stops it).");
+        }
+        None => _ = el(&row, "span", "auth-muted auth-activity-text", "No check running."),
     }
     if let Some(problem) = a.problems.get(&path) {
         el(root, "p", "auth-callout auth-problem", problem);
@@ -239,6 +251,33 @@ pub struct Focus {
     pub pane: Pane,
     pub path: String,
     pub ranges: Vec<(u32, u32)>,
+    /// Scroll to the rows: only for a request the user made to see them (Show in AI check, Show in similarity check),
+    /// never for the rows of a check of a selection, which are only marked.
+    pub scroll: bool,
+    /// Which request this is, so the pane scrolls once for it, not again at every later drawing.
+    pub request: u64,
+}
+
+thread_local! {
+    static NEXT_REQUEST: std::cell::Cell<u64> = const { std::cell::Cell::new(1) };
+    static SCROLLED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl Focus {
+    /// Rows to mark, and to scroll to once when `scroll`.
+    pub fn new(pane: Pane, path: &str, ranges: Vec<(u32, u32)>, scroll: bool) -> Focus {
+        let request = NEXT_REQUEST.with(|n| {
+            let r = n.get();
+            n.set(r + 1);
+            r
+        });
+        Focus { pane, path: path.to_string(), ranges, scroll, request }
+    }
+}
+
+/// Whether drawing `focus` scrolls to it: a scroll request not yet done (`done`: the last request scrolled to).
+pub fn should_scroll(focus: &Focus, done: u64) -> bool {
+    focus.scroll && focus.request != done
 }
 
 /// Whether a row at [from, to) of `path` is one `pane` marks.
@@ -246,13 +285,18 @@ fn focused(a: &App, pane: Pane, path: &str, from: u32, to: u32) -> bool {
     a.focus.as_ref().is_some_and(|f| f.pane == pane && f.path == path && f.ranges.iter().any(|r| table::meets((from, to), *r)))
 }
 
-/// Mark a row as focused, and scroll the first of them into view once drawn.
-fn mark_focused(tr: &JsValue, first: &mut bool) {
+/// Mark a row as focused, and scroll the first of them into view once drawn, once per Show in … request (never at
+/// later drawings, nor for a check's own rows).
+fn mark_focused(a: &App, tr: &JsValue, first: &mut bool) {
     call!(get(tr, "classList"), add, "is-focused");
     if *first {
         *first = false;
-        let tr = tr.clone();
-        js::timeout(0.0, move || _ = call!(tr, scrollIntoView, obj! { block: "center" }));
+        let Some(f) = &a.focus else { return };
+        if should_scroll(f, SCROLLED.with(|s| s.get())) {
+            SCROLLED.with(|s| s.set(f.request));
+            let tr = tr.clone();
+            js::timeout(0.0, move || _ = call!(tr, scrollIntoView, obj! { block: "center" }));
+        }
     }
 }
 
@@ -300,7 +344,7 @@ fn ai_section(a: &App, root: &JsValue, path: &str, text: Option<&str>) {
     let wrap = el(root, "div", "auth-table-wrap", "");
     let t = el(&wrap, "table", "auth-table auth-ai-table", "");
     let head = el(&el(&t, "thead", "", ""), "tr", "", "");
-    for h in ["My paragraph", "AI-likeness", "Verdict", "Why (SlopTotal's detectors)", "Hints"] {
+    for h in ["My paragraph", "AI-likeness", "Verdict", "Why"] {
         el(&head, "th", "", h);
     }
     let body = el(&t, "tbody", "", "");
@@ -312,7 +356,7 @@ fn ai_section(a: &App, root: &JsValue, path: &str, text: Option<&str>) {
         let r = crate::ai_table::paragraph_row(&p.text, &s, an, weights);
         let tr = el(&body, "tr", "auth-row", "");
         if focused(a, Pane::Ai, path, p.from, p.to) {
-            mark_focused(&tr, &mut first);
+            mark_focused(a, &tr, &mut first);
         }
         let mine = el(&tr, "td", "auth-cell-mine", "");
         marked(&el(&mine, "span", "", ""), &r.short, &r.marks);
@@ -341,39 +385,42 @@ fn ai_section(a: &App, root: &JsValue, path: &str, text: Option<&str>) {
         }
         let det = el(&tr, "td", "auth-cell-list", "");
         if s.score.engine == crate::gptzero::ENGINE {
-            // GPTZero's answer: its message; its reasons only through AI Patterns, for keys it allow-lists
-            if !s.score.message.is_empty() {
-                el(&det, "div", "auth-detector-says", &s.score.message);
-            }
-            el(&det, "div", "auth-muted", "GPTZero gives its reasons (AI Patterns) only to keys it has allow-listed; Sentences shows which sentences it highlights as AI, each with its own probability.");
-        } else if an.is_none() {
-            let b = el(&det, "button", "auth-mini-button", "Load reasons");
-            tooltip(a, &b, "Ask SlopTotal for each detector's reason for this paragraph (starts SlopTotal if it is not running).");
-            let t2 = p.text.clone();
-            on(&b, "click", move |e| {
-                call!(e, stopPropagation);
-                js::spawn(load_reasons(t2.clone()));
-                JsValue::UNDEFINED
-            });
+            gptzero_why(a, &det, &key, &p.text, &s.score);
         } else {
-            if !r.overall.is_empty() {
-                el(&det, "div", "auth-callout auth-problem", &r.overall);
-            }
-            for d in &r.detectors {
-                detector_block(&det, d);
-            }
-            for f in &r.failed {
-                el(&det, "div", "auth-muted", f);
-            }
-            if !r.uncounted.is_empty() {
-                let more = el(&det, "details", "auth-uncounted", "");
-                el(&more, "summary", "", &format!("Not counted for this text's language ({})", r.uncounted.len()));
-                for d in &r.uncounted {
-                    detector_block(&more, d);
+            el(&det, "div", "auth-engine", "SlopTotal");
+            if an.is_none() {
+                let b = el(&det, "button", "auth-mini-button", "Load reasons");
+                tooltip(a, &b, "Ask SlopTotal for each detector's reason for this paragraph (starts SlopTotal if it is not running).");
+                let t2 = p.text.clone();
+                on(&b, "click", move |e| {
+                    call!(e, stopPropagation);
+                    js::spawn(load_reasons(t2.clone()));
+                    JsValue::UNDEFINED
+                });
+            } else {
+                if !r.overall.is_empty() {
+                    el(&det, "div", "auth-callout auth-problem", &r.overall);
+                }
+                for d in &r.detectors {
+                    detector_block(&det, d, &format!("{key}|st|{}", d.engine));
+                }
+                if !r.failed.is_empty() {
+                    let (group, summary) = fold(&det, format!("{key}|st|failed"), "auth-fold-group");
+                    el(&summary, "span", "", &format!("Did not run ({})", r.failed.len()));
+                    for f in &r.failed {
+                        el(&group, "div", "auth-muted", f);
+                    }
+                }
+                if !r.uncounted.is_empty() {
+                    let (group, summary) = fold(&det, format!("{key}|st|uncounted"), "auth-fold-group");
+                    el(&summary, "span", "", &format!("Not counted for this text's language ({})", r.uncounted.len()));
+                    for d in &r.uncounted {
+                        detector_block(&group, d, &format!("{key}|st|{}", d.engine));
+                    }
                 }
             }
         }
-        list_cell(&tr, &r.hints);
+        writing_patterns(&det, &format!("{key}|hints"), &r.hints);
         // a paragraph scored with its neighbours: the whole group is selected (and glows)
         let (from, to) = s.together.as_ref().and_then(|t| crate::ai::span_range(&all, t)).unwrap_or((p.from, p.to));
         let pth = path.to_string();
@@ -445,31 +492,126 @@ fn marked(parent: &JsValue, text: &str, marks: &[std::ops::Range<usize>]) {
     }
 }
 
-/// One detector of the full analysis as its own block: its name in plain words, its result on the scale (a bar and a
-/// number), its share of the score, and one sentence.
-fn detector_block(parent: &JsValue, d: &crate::ai_table::Detector) {
-    let b = el(parent, "div", "auth-detector", "");
-    let top = el(&b, "div", "auth-detector-top", "");
-    el(&top, "span", "auth-detector-name", &d.plain);
-    el(&top, "span", "auth-detector-score", &format!("{:.0} / 100", d.score));
-    let bar = el(&b, "div", "auth-bar", "");
-    let fill = el(&bar, "div", &format!("auth-bar-fill {}", crate::ai::class(crate::ai::tint(d.score))), "");
-    set(&get(&fill, "style"), "width", format!("{:.0}%", d.score.clamp(0.0, 100.0)));
+thread_local! {
+    /// The collapsed blocks opened while Obsidian runs (by row, engine and block), so a pane drawn again keeps them
+    /// open; a new check's rows start collapsed (their text, and so their key, is new).
+    static OPEN: std::cell::RefCell<std::collections::HashSet<String>> = Default::default();
+}
+
+/// A collapsed block (`<details>`: a summary line that opens it, by mouse or keyboard), open again if it was open
+/// before; a click inside it never reaches the row (which would go to the text). The block and its summary.
+fn fold(parent: &JsValue, id: String, cls: &str) -> (JsValue, JsValue) {
+    let d = el(parent, "details", &format!("auth-fold {cls}"), "");
+    if OPEN.with(|o| o.borrow().contains(&id)) {
+        set(&d, "open", true);
+    }
+    let summary = el(&d, "summary", "auth-fold-summary", "");
+    let d2 = d.clone();
+    on(&d, "toggle", move |_| {
+        let open = get(&d2, "open").as_bool() == Some(true);
+        OPEN.with(|o| {
+            let mut o = o.borrow_mut();
+            if open {
+                o.insert(id.clone());
+            } else {
+                o.remove(&id);
+            }
+        });
+        JsValue::UNDEFINED
+    });
+    on(&d, "click", |e| {
+        call!(e, stopPropagation);
+        JsValue::UNDEFINED
+    });
+    (d, summary)
+}
+
+/// A small bar for a result on the scale (0 to 100), in its band's colour.
+fn mini_bar(parent: &JsValue, score: f64) {
+    let bar = el(parent, "span", "auth-bar auth-bar-mini", "");
+    let fill = el(&bar, "span", &format!("auth-bar-fill {}", crate::ai::class(crate::ai::tint(score))), "");
+    set(&get(&fill, "style"), "width", format!("{:.0}%", score.clamp(0.0, 100.0)));
+}
+
+/// One detector of the full analysis, collapsed: its name in plain words, its result (a number and a small bar) and
+/// its share of the score on the summary line; opened, its plain sentence and SlopTotal's own details.
+fn detector_block(parent: &JsValue, d: &crate::ai_table::Detector, id: &str) {
+    let (b, summary) = fold(parent, id.to_string(), "auth-detector");
+    el(&summary, "span", "auth-detector-name", &d.plain);
+    el(&summary, "span", "auth-detector-score", &format!("{:.0} / 100", d.score));
+    mini_bar(&summary, d.score);
     if let Some(share) = d.share {
-        el(&b, "div", "auth-muted", &format!("Counts for {:.0}% of the score.", share * 100.0));
+        el(&summary, "span", "auth-muted auth-detector-share", &format!("counts for {:.0}%", share * 100.0));
     }
     if !d.says.is_empty() {
         el(&b, "div", "auth-detector-says", &d.says);
     }
+    if !d.details.is_empty() && !d.says.contains(d.details.lines().next().unwrap_or("")) {
+        el(&b, "div", "auth-muted auth-detector-details", &format!("SlopTotal's details: {}", d.details));
+    }
 }
 
-fn list_cell(tr: &JsValue, lines: &[String]) {
-    let td = el(tr, "td", "auth-cell-list", "");
-    if lines.is_empty() {
-        el(&td, "span", "auth-muted", "\u{2014}");
+/// Authenticity's own model-free hints for a row (stock phrases, signposting, vague wording, stacked hedges, em dashes,
+/// even sentence lengths), collapsed; nothing when none was found. They are not a detector's reasons.
+fn writing_patterns(parent: &JsValue, id: &str, hints: &[String]) {
+    if hints.is_empty() {
+        return;
     }
-    for l in lines {
-        el(&td, "div", "", l);
+    let (group, summary) = fold(parent, id.to_string(), "auth-fold-group");
+    el(&summary, "span", "", &format!("Writing patterns ({})", hints.len()));
+    el(&group, "div", "auth-muted", "Found by Authenticity's own rules (no model); the words are marked in the text.");
+    for h in hints {
+        el(&group, "div", "auth-detector-says", h);
+    }
+}
+
+/// The Why cell of a row GPTZero scored: GPTZero's message, each sentence's probability (collapsed, with the sentence),
+/// and its AI Patterns when asked for (each pattern collapsed, with GPTZero's explanation). Never SlopTotal's reasons.
+fn gptzero_why(a: &App, det: &JsValue, key: &str, paragraph: &str, s: &crate::sloptotal::Score) {
+    el(det, "div", "auth-engine", "GPTZero");
+    if !s.message.is_empty() {
+        el(det, "div", "auth-detector-says", &s.message);
+    }
+    for (k, x) in s.sentences.iter().enumerate() {
+        let (b, summary) = fold(det, format!("{key}|gz|s{k}"), "auth-detector");
+        el(&summary, "span", "auth-detector-name", &format!("Sentence {}", k + 1));
+        el(&summary, "span", "auth-detector-score", &format!("{:.0} / 100", x.p * 100.0));
+        mini_bar(&summary, x.p * 100.0);
+        if x.highlight {
+            el(&summary, "span", "auth-muted auth-detector-share", "highlighted as AI");
+        }
+        el(&b, "div", "auth-detector-says", &x.text);
+    }
+    match a.gz_patterns.get(key) {
+        None => {
+            let b = el(det, "button", "auth-mini-button", "AI Patterns");
+            tooltip(a, &b, "Ask GPTZero why: it sends this paragraph to GPTZero again (it may count against your plan). GPTZero answers only for keys it has allow-listed for AI Patterns.");
+            let t2 = paragraph.to_string();
+            on(&b, "click", move |e| {
+                call!(e, stopPropagation);
+                js::spawn(crate::app::gptzero_patterns(t2.clone()));
+                JsValue::UNDEFINED
+            });
+        }
+        Some(Err(e)) => _ = el(det, "div", "auth-muted", &format!("AI Patterns: {e}.")),
+        Some(Ok(hits)) if hits.is_empty() => _ = el(det, "div", "auth-muted", "AI Patterns: GPTZero found no patterns in this paragraph."),
+        Some(Ok(hits)) => {
+            for (k, h) in hits.iter().enumerate() {
+                let (b, summary) = fold(det, format!("{key}|gz|p{k}"), "auth-detector");
+                el(&summary, "span", "auth-detector-name", &h.name);
+                el(&summary, "span", "auth-muted auth-detector-share", &format!("sentence {}", h.sentence_index + 1));
+                if !h.explanation.is_empty() {
+                    el(&b, "div", "auth-detector-says", &h.explanation);
+                }
+                if !h.description.is_empty() {
+                    el(&b, "div", "auth-muted", &h.description);
+                }
+                if let Some(t) = h.k_times {
+                    el(&b, "div", "auth-muted", &format!("About {t:.1} times as common in AI text as in human text (GPTZero)."));
+                }
+                el(&b, "div", "auth-muted auth-detector-details", &format!("\u{201c}{}\u{201d}", h.sentence));
+            }
+        }
     }
 }
 
@@ -486,7 +628,6 @@ fn sentence_rows(a: &App, body: &JsValue, path: &str, text: &str, p: &crate::ai:
             if !r.note.is_empty() {
                 el(&verdict, "div", "auth-note", &r.note);
             }
-            el(&tr, "td", "auth-cell-list", "");
             el(&tr, "td", "auth-cell-list", "");
             let at = crate::align::find_utf16(&para, &r.text).map(|(x, y)| (p.from + x, p.from + y)).unwrap_or((p.from, p.to));
             let pth = path.to_string();
@@ -517,7 +658,7 @@ fn sentence_rows(a: &App, body: &JsValue, path: &str, text: &str, p: &crate::ai:
                 JsValue::UNDEFINED
             });
         }
-        list_cell(&tr, &r.hints);
+        writing_patterns(&det, &format!("{}|hints", crate::ai::key(&r.text)), &r.hints);
         let at = crate::align::find_utf16(&para, &r.text).map(|(x, y)| (p.from + x, p.from + y)).unwrap_or((p.from, p.to));
         let pth = path.to_string();
         on_click(&tr, move || go_to(&pth, at.0, at.1, None));
@@ -777,7 +918,7 @@ fn comparison(a: &App, root: &JsValue, path: &str, rows: &[table::Row]) {
     for r in rows {
         let tr = el(&body, "tr", "auth-row", "");
         if focused(a, Pane::Plagiarism, path, r.from, r.to) {
-            mark_focused(&tr, &mut first);
+            mark_focused(a, &tr, &mut first);
         }
         cell(&tr, "auth-cell-mine", &r.mine);
         cell(&tr, "auth-cell-source", &r.source);
@@ -840,4 +981,23 @@ fn open_source(note: &str, line: Option<u32>) {
         None => obj! {},
     };
     call!(leaf, openFile, file, state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only a Show in … request scrolls, and only once: drawing the pane again (as a check's steps do) never scrolls,
+    /// and a check's own marked rows never do.
+    #[test]
+    fn a_show_in_request_scrolls_once_and_a_check_never() {
+        let show = Focus::new(Pane::Ai, "a.md", vec![(0, 5)], true);
+        assert!(should_scroll(&show, 0));
+        assert!(!should_scroll(&show, show.request), "drawn again after scrolling: no scroll");
+        let check = Focus::new(Pane::Ai, "a.md", vec![(0, 5)], false);
+        assert!(!should_scroll(&check, 0), "a check of a selection marks its rows, never scrolls");
+        let again = Focus::new(Pane::Ai, "a.md", vec![(0, 5)], true);
+        assert_ne!(again.request, show.request);
+        assert!(should_scroll(&again, show.request), "a new request for the same rows scrolls again");
+    }
 }

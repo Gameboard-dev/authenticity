@@ -121,11 +121,10 @@ body {
 .auth-source-link.is-unresolved { cursor: default; color: var(--text-muted); text-decoration: none; }
 
 /* The AI Detector pane's table, a paragraph's sentences under it, the rows a Show entry or a check marked. */
-.auth-ai-table th:nth-child(1) { width: 34%; }
+.auth-ai-table th:nth-child(1) { width: 38%; }
 .auth-ai-table th:nth-child(2) { width: 12%; }
-.auth-ai-table th:nth-child(3) { width: 14%; }
-.auth-ai-table th:nth-child(4) { width: 22%; }
-.auth-ai-table th:nth-child(5) { width: 18%; }
+.auth-ai-table th:nth-child(3) { width: 16%; }
+.auth-ai-table th:nth-child(4) { width: 34%; }
 .auth-subrow td { color: var(--text-muted); font-size: 0.95em; }
 .auth-subrow td:first-child { padding-left: 14px; }
 .auth-cell-list > div + div { margin-top: 3px; }
@@ -218,7 +217,8 @@ body {
 .modal-container.auth-step .modal { width: min(520px, 92vw); margin-bottom: 8vh; }
 .auth-step .auth-step-line { font-size: var(--font-ui-medium); font-weight: var(--font-medium); }
 .auth-step .auth-step-input { width: 4em; font-size: var(--font-ui-large); text-align: center; margin-bottom: var(--size-4-2); }
-.auth-panel .auth-activity { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 0.6em; }
+.auth-panel .auth-activity { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 0.6em; height: 2.4em; overflow: hidden; }
+.auth-panel .auth-activity-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* The AI Detector pane: the scale's legend, one reliability note, each detector as its own block with a bar, and the
    words a hint found highlighted in the text (ai_table.rs). */
@@ -230,5 +230,20 @@ body {
 .auth-panel .auth-bar { height: 4px; border-radius: 2px; background: var(--background-modifier-border); margin: 4px 0; overflow: hidden; }
 .auth-panel .auth-bar-fill { height: 100%; }
 .auth-panel .auth-detector-says { font-size: var(--font-ui-smaller); margin-top: 2px; }
-.auth-panel .auth-uncounted summary { cursor: pointer; color: var(--text-muted); font-size: var(--font-ui-smaller); margin: 4px 0; }
+/* The Why column's collapsed blocks: one summary line each (name, result, a small bar, its share), opened by click
+   or keyboard. */
+.auth-panel .auth-engine { font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); color: var(--text-muted); margin-bottom: 4px; }
+.auth-panel .auth-fold { margin: 0 0 4px; }
+.auth-panel .auth-fold-summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.auth-panel .auth-fold-summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
+.auth-panel .auth-fold-summary { list-style: none; }
+.auth-panel .auth-fold-summary::before { content: "\25B8"; color: var(--text-muted); width: 0.8em; flex: none; }
+.auth-panel .auth-fold[open] > .auth-fold-summary::before { content: "\25BE"; }
+.auth-panel .auth-fold-group { margin-top: 4px; }
+.auth-panel .auth-fold-group > .auth-fold-summary { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.auth-panel .auth-detector > .auth-fold-summary .auth-detector-name { flex: 1 1 auto; min-width: 6em; }
+.auth-panel .auth-bar-mini { display: inline-block; width: 3em; height: 4px; margin: 0; vertical-align: middle; }
+.auth-panel .auth-bar-mini .auth-bar-fill { display: block; }
+.auth-panel .auth-detector-share { font-size: var(--font-ui-smaller); }
+.auth-panel .auth-detector-details { font-size: var(--font-ui-smaller); margin-top: 2px; }
 .auth-panel mark.auth-hint-mark { background: color-mix(in srgb, var(--color-orange) 28%, transparent); color: inherit; border-radius: 2px; }

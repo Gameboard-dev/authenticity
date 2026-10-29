@@ -38,22 +38,25 @@ of SlopTotal's weight for the text's language, no score is shown, only the messa
 SlopTotal's own number out again from the same inputs (another calibration file, or text in a script written without
 spaces between words), it shows no score rather than a guess.
 
-## Reasons and hints
+## Reasons and writing patterns
 
-**Reasons.** *Load reasons* runs SlopTotal's full analysis of a paragraph. Each detector is then its own block: its
-name in plain words, its result 0 to 100 with a bar, the share of the score it counts for, and one sentence saying what
-it measures and what it found, in SlopTotal's own words. The trained classifiers give a probability only, and the pane
-says so rather than inventing a reason. Detectors are ordered by how far each moved the score; those of weight 0 for
-the text's language are folded away as *not counted for this language*.
+**Reasons.** *Load reasons* runs SlopTotal's full analysis of a paragraph. Each detector is then a collapsed block. Its
+summary line gives its name in plain words, its result (0 to 100, with a small bar) and the share of the score it counts
+for. Opened, it says in one sentence what the detector measures and what it found, followed by SlopTotal's own details.
+The trained classifiers give a probability only, and the pane says so rather than inventing a reason. Detectors are
+ordered by how far each moved the score. Those of weight 0 for the text's language are grouped, collapsed, under *Not
+counted for this text's language*, and those that did not run under *Did not run*. A block you open stays open while
+Obsidian runs; a new check's rows start collapsed.
 
 A weight reflects both how accurate a detector was on SlopBench and how much it overlaps with the others; it is not a
 measure of how far to trust that detector alone. Single detectors disagree strongly on short text: on a 248-character
 text written by a person, SlopTotal's overall score was 24 (human) while three of its classifiers scored it 87 to 93.
 Read the paragraph's overall score in its context, never one detector.
 
-**Hints** are model-free and found in the text itself: stock phrases, signposting openers, vague wording, stacked
-hedges, em dashes and even sentence lengths. They point at features common in model output; none is evidence on its
-own.
+**Writing patterns** are Authenticity's own model-free rules, found in the text itself: stock phrases, signposting
+openers, vague wording, stacked hedges, em dashes and even sentence lengths. When a row has any, they are listed under
+*Writing patterns* at the end of its *Why* cell, and their words are highlighted in the paragraph. They point at
+features common in model output; none is evidence on its own, and on academic prose they are rare.
 
 **Sentences.** *Score sentences* scores each sentence of a paragraph with its neighbours, so you can see which ones
 carry the paragraph's score.
@@ -87,10 +90,16 @@ and how many your plan has left. Tick *Remember for this session* to stop the qu
 choice is never kept longer. Without a key there is no question and nothing is sent. Cancel sends nothing.
 
 **What is shown.** GPTZero's probability that the text was written by AI, on the same scale (AI-likeness = 100 times
-that probability) and marked *GPTZero* on every row; its class (human, mixed, AI) and its message; and, under
-*Sentences*, each sentence's own probability, with the sentences GPTZero highlights as AI. GPTZero gives its reasons
-(AI Patterns) only to keys it has allow-listed, so the pane shows its message instead. Results are kept apart from
-SlopTotal's, and the history records which detector gave each score.
+that probability) and marked *GPTZero* on every row. Its *Why* cell names GPTZero and shows its message, then each
+sentence's own probability as a collapsed block (the sentence inside, and whether GPTZero highlights it as AI). A row
+GPTZero scored never shows SlopTotal's reasons, and the reverse; a table can hold rows of both.
+
+**AI Patterns.** GPTZero explains its result, sentence by sentence, only to keys it has allow-listed for AI Patterns.
+The *AI Patterns* button in a GPTZero row asks for them: it sends that paragraph to GPTZero again, which may count
+against your plan. Each pattern found (for example, the rule of three) is then a collapsed block with GPTZero's
+explanation and description, the sentence, and how much more common the pattern is in AI text, where GPTZero has measured
+it. A key that is not allow-listed gets GPTZero's refusal, said plainly. Results are kept apart from SlopTotal's, and the
+history records which detector gave each score.
 
 **When a request fails** (a bad or expired key, a plan out of words, the hourly rate limit), Authenticity says so
 plainly, keeps nothing from GPTZero, and offers to check with SlopTotal instead.

@@ -36,7 +36,7 @@ What Authenticity sends over the network, stores outside the vault and runs, as 
 
 - **AI-writing check**: each paragraph scored by [SlopTotal](https://github.com/pablocaeg/sloptotal), a local
   AI-text detector (23 detectors combined into one score), on one scale from 0 (reads as written by a person) to 100
-  (reads as AI), with the detectors' reasons, each sentence's own score and plain-language hints. Optionally
+  (reads as AI), with the detectors' reasons in collapsed blocks and each sentence's own score. Optionally
   [GPTZero](https://gptzero.me) instead, chosen for each check.
 - **Plagiarism check**: runs of six or more words you share with a library note (verbatim and near-verbatim,
   quotations left out), the field's fixed phrasing listed apart, and close paraphrases (a sentence that keeps a
@@ -86,7 +86,7 @@ The commands of the same names check the whole note ([Using Authenticity](docs/u
 | [Disclosures and compliance](docs/disclosures.md) | Network use, what is kept and where, files outside the vault, payment, accounts, and each of Obsidian's rules |
 | [Installation](docs/installation.md) | The plugin, the helper, SlopTotal, the library folder, the optional GPTZero key and embedding search, removing it all |
 | [Using Authenticity](docs/usage.md) | The menus, commands, panes, marks and colours |
-| [AI detection](docs/ai-detection.md) | How SlopTotal scores, the scale, reasons and hints, short paragraphs, GPTZero, and how reliable the scores are |
+| [AI detection](docs/ai-detection.md) | How SlopTotal scores, the scale, reasons and writing patterns, short paragraphs, GPTZero, and how reliable the scores are |
 | [Similarity](docs/similarity.md) | Copied wording, fixed phrasing, close paraphrase, the thresholds, the library index, the optional embedding search |
 | [Characters](docs/characters.md) | What Reveal AI characters finds, and how replacing them works |
 | [Settings](docs/settings.md) | Every setting and what it does |

@@ -24,7 +24,7 @@ sent to GPTZero's servers, and it counts against your paid GPTZero plan. Without
 |---|---|---|
 | Authenticity's helper, `127.0.0.1` (port 8791 by default) | When you run an AI check, or ask the AI Detector pane for reasons or sentence scores | The paragraph or sentence being scored |
 | SlopTotal, `127.0.0.1` (port 8000 by default), through the helper | The same | `{"text": ...}` only |
-| `api.gptzero.me` (HTTPS), **optional** | Only with a GPTZero key linked: for a check where you chose GPTZero when asked; *Check the key*; and the question before a check | The checked paragraphs' text, one request per paragraph or group, with your key in a header; *Check the key* and the question send the key alone (no text, no words used) |
+| `api.gptzero.me` (HTTPS), **optional** | Only with a GPTZero key linked: for a check where you chose GPTZero when asked; *Check the key*; and the question before a check | The checked paragraphs' text, one request per paragraph or group, with your key in a header; a paragraph's text again when you press *AI Patterns* in its row; *Check the key* and the question send the key alone (no text, no words used) |
 | The optional embedding search, `127.0.0.1` (port 8766 by default), **optional** | Only with *Embedding search* on, when you check for plagiarism | The sentences not already matched word for word |
 | huggingface.co | **Once, at installation, started by you** ([Installation](installation.md#3-sloptotal)) | SlopTotal's requests for its models (about 9 GB). Authenticity never starts this |
 

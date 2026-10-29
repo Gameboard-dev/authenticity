@@ -20,6 +20,8 @@ use crate::sloptotal::{verdict_of, Score, CANCELLED};
 
 pub const PREDICT: &str = "https://api.gptzero.me/v2/predict/text";
 pub const USAGE: &str = "https://api.gptzero.me/v3/usage-stats";
+/// AI Patterns: GPTZero's explanations, sentence by sentence (Server-Sent Events; only for keys GPTZero allow-lists).
+pub const PATTERNS: &str = "https://api.gptzero.me/v3/ai/patterns/stream";
 /// The longest text GPTZero accepts on API plans, in characters.
 pub const MAX_CHARS: usize = 150_000;
 /// The engine's name in a score, the history and the pane.
@@ -167,6 +169,60 @@ pub fn request_log(bytes: usize, status: u16, ms: f64) -> Value {
     serde_json::json!({ "bytes": bytes, "status": status, "ms": ms.round() })
 }
 
+/// One AI writing pattern GPTZero found in a sentence, with its plain-language explanation (AI Patterns).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PatternHit {
+    /// The sentence's place in the text (from 0) and its words.
+    pub sentence_index: usize,
+    pub sentence: String,
+    /// The pattern's name as GPTZero shows it, its category, and its description.
+    pub name: String,
+    pub category: String,
+    pub description: String,
+    /// Why this sentence matched it.
+    pub explanation: String,
+    /// How many times more often the pattern shows up in AI text than in human text, when measured.
+    pub k_times: Option<f64>,
+}
+
+/// AI Patterns' answer (`data: <json>` lines; a final `{"error": …}` event when it failed after starting) as the
+/// patterns found, in the order of the sentences.
+pub fn parse_patterns(body: &str) -> Result<Vec<PatternHit>, String> {
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let Some(data) = line.strip_prefix("data:") else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(data.trim()) else { continue };
+        if let Some(e) = v.get("error").and_then(Value::as_str) {
+            return Err(format!("GPTZero's AI Patterns stopped: {}", e.chars().take(200).collect::<String>()));
+        }
+        let index = v.get("sentence_index").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let sentence = s(&v, "sentence");
+        for p in v.get("patterns").and_then(Value::as_array).into_iter().flatten().take(50) {
+            let name = Some(s(p, "display_name")).filter(|x| !x.is_empty()).unwrap_or_else(|| s(p, "pattern_name"));
+            let description = Some(s(p, "display_description")).filter(|x| !x.is_empty()).unwrap_or_else(|| s(p, "description"));
+            let k_times = p.get("k_times").and_then(Value::as_f64).filter(|x| x.is_finite());
+            out.push(PatternHit { sentence_index: index, sentence: sentence.clone(), name, category: s(p, "category"), description, explanation: s(p, "explanation"), k_times });
+        }
+    }
+    Ok(out)
+}
+
+/// Ask AI Patterns about `text` (the user asked, for a paragraph GPTZero scored): the patterns found, or what went
+/// wrong, with the allow-listing GPTZero requires said when the key is refused.
+pub async fn patterns<N: Net>(net: &N, key: &str, text: &str) -> Result<Vec<PatternHit>, String> {
+    let t = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.is_empty() || t.chars().count() > MAX_CHARS {
+        return Err("the text is empty or too long for GPTZero".into());
+    }
+    let (status, body) = net.post(PATTERNS, key, serde_json::json!({ "documents": [{ "inputText": t }] }).to_string()).await;
+    match status {
+        200 => parse_patterns(&body).map_err(|e| without_key(e, key)),
+        401 | 403 => Err(without_key(format!("{}. AI Patterns works only for keys GPTZero has allow-listed for it", error(status, &body)), key)),
+        _ => Err(without_key(error(status, &body), key)),
+    }
+}
+
 /// An error message with the key taken out, should GPTZero's answer quote it.
 fn without_key(msg: String, key: &str) -> String {
     if key.len() >= 4 && msg.contains(key) { msg.replace(key, "[key]") } else { msg }
@@ -305,6 +361,30 @@ mod tests {
         let run = crate::journal::Run { t: 0.0, note: "a.md".into(), kind: "paragraphs".into(), engine: ENGINE.into(), device: String::new(), helper: String::new(), items: vec![crate::journal::item("One two three four five six seven eight nine ten.", 99.7, false)] };
         let h = serde_json::to_string(&run).unwrap();
         assert!(h.contains("\"engine\":\"gptzero\"") && !h.contains(key) && !h.contains("nine ten"), "{h}");
+    }
+
+    /// AI Patterns, against a fake server: each pattern with its sentence and explanation; an error event, a refused
+    /// key (not allow-listed) and an unreadable answer said plainly; the request holds the text alone.
+    #[test]
+    fn ai_patterns_are_read_from_the_stream() {
+        let stream = concat!(
+            ":keepalive\n\n",
+            "data: {\"document_index\":0,\"sentence_index\":2,\"sentence\":\"It is fast, cheap and simple.\",\"interpretability_designation\":\"ai\",",
+            "\"patterns\":[{\"domain_id\":\"ai-patterns\",\"pattern_id\":\"rule_of_three\",\"pattern_name\":\"Rule of three\",\"display_name\":\"Rule of three\",",
+            "\"category\":\"Language and grammar\",\"description\":\"d\",\"display_description\":\"Lists of three.\",\"explanation\":\"Three adjectives in a row.\",\"relevance\":0.9,\"k_times\":3.2}]}\n\n",
+            "data: {\"document_index\":0,\"sentence_index\":5,\"sentence\":\"In conclusion, it works.\",\"patterns\":[{\"pattern_name\":\"Signposting\",\"explanation\":\"Opens with a stock phrase.\",\"k_times\":null}]}\n\n");
+        let net = Fake { answers: RefCell::new([(200, stream.to_string())].into()), ..Fake::default() };
+        let got = block_on(patterns(&net, "k", "A paragraph  of text.")).unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].sentence_index, got[0].name.as_str(), got[0].explanation.as_str(), got[0].k_times), (2, "Rule of three", "Three adjectives in a row.", Some(3.2)));
+        assert_eq!((got[1].name.as_str(), got[1].k_times), ("Signposting", None), "the canonical name when no display name");
+        assert_eq!((net.sent.borrow()[0].0.as_str(), net.sent.borrow()[0].2.as_str()), (PATTERNS, r#"{"documents":[{"inputText":"A paragraph of text."}]}"#));
+        assert!(parse_patterns("data: {\"error\": \"Error in streaming AI patterns\"}\n").unwrap_err().contains("stopped"));
+        let key = "gz-secret-0123456789";
+        let net = Fake { answers: RefCell::new([(403, format!(r#"{{"error":"bad {key}"}}"#))].into()), ..Fake::default() };
+        let e = block_on(patterns(&net, key, "Text.")).unwrap_err();
+        assert!(e.contains("allow-listed") && !e.contains(key), "{e}");
+        assert!(parse_patterns("not a stream").unwrap().is_empty());
     }
 
     #[test]

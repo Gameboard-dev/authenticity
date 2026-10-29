@@ -28,6 +28,9 @@ header: no note name, vault, path or other identifier. Before the question, and 
 request to `https://api.gptzero.me/v3/usage-stats` with the key alone (no text, no words used) fetches the words left
 on your plan.
 
+**AI Patterns**, only when you press its button in a GPTZero row: one request to
+`https://api.gptzero.me/v3/ai/patterns/stream` with that paragraph's text alone and the key.
+
 **The key** is kept in Obsidian's keychain. Authenticity reads it only to send a request, and never writes it to its
 files, history, logs or error messages; if GPTZero's answer ever quotes it, it is taken out before anything is shown.
 

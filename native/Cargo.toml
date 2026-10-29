@@ -1,6 +1,6 @@
 [package]
 name = "authenticity-native"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 description = "Authenticity's native programs: the helper that runs SlopTotal on this computer (device choice, the GPU claims the workspace's services share, idle stop), the MCP server for research assistants, and check-overlap, the close-copying check for a draft"
 publish = false

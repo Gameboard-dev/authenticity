@@ -209,6 +209,8 @@ pub struct App {
     /// had not changed), and the paragraphs whose sentences the AI Detector pane lists (by the paragraph's key).
     pub focus: Option<crate::panel::Focus>,
     pub expanded: std::collections::HashSet<String>,
+    /// GPTZero's AI Patterns for a paragraph (by its key), asked for in the AI Detector pane; kept while Obsidian runs.
+    pub gz_patterns: HashMap<String, Result<Vec<crate::gptzero::PatternHit>, String>>,
     /// The AI Detector pane's History view: open or not, and the run picked (its time).
     pub history_open: bool,
     pub history_pick: Option<f64>,
@@ -344,6 +346,7 @@ pub fn start(plugin: JsValue, obs: JsValue, require: JsValue, _module: JsValue, 
         para_cache: Default::default(),
         focus: None,
         expanded: Default::default(),
+        gz_patterns: Default::default(),
         history_open: false,
         history_pick: None,
         session_engine: None,
@@ -833,7 +836,7 @@ fn matches_at(a: &App, path: &str, text: &str, at: (u32, u32)) -> Vec<(u32, u32)
 
 /// Mark the rows of `ranges` in a pane, open it and scroll to them.
 pub fn show_in(pane: crate::panel::Pane, path: &str, ranges: Vec<(u32, u32)>) {
-    with(|a| a.focus = Some(crate::panel::Focus { pane, path: path.to_string(), ranges }));
+    with(|a| a.focus = Some(crate::panel::Focus::new(pane, path, ranges, true)));
     crate::panel::open(pane);
     with(|a| crate::panel::render(a));
 }
@@ -1421,6 +1424,23 @@ impl crate::gptzero::Net for GptZeroNet {
     }
 }
 
+/// GPTZero's AI Patterns for a paragraph it scored, when the user asks (the pane's AI Patterns button): the paragraph is
+/// sent again, with the key; the answer, or what went wrong, is kept for the pane.
+pub async fn gptzero_patterns(paragraph: String) {
+    let Some(key) = gptzero_key().await else {
+        with(|a| a.notice("link a GPTZero API key first (Settings \u{2192} Authenticity \u{2192} GPTZero)."));
+        return;
+    };
+    with(|a| a.busy(Some("GPTZero: asking for its AI patterns\u{2026}".into())));
+    let r = crate::gptzero::patterns(&GptZeroNet { run: None }, &key, &paragraph).await;
+    with(|a| {
+        a.busy(None);
+        crate::journal::debug(a, "gptzero-patterns", serde_json::json!({ "ok": r.is_ok(), "found": r.as_ref().map(|v| v.len()).unwrap_or(0) }), None);
+        a.gz_patterns.insert(crate::ai::key(&paragraph), r);
+        crate::panel::render(a);
+    });
+}
+
 /// The question before a check when a GPTZero key is linked: GPTZero, SlopTotal or Cancel, with "Remember for this
 /// session". The engine chosen and whether to remember it; None when cancelled (nothing is sent).
 async fn ask_engine(text: &str) -> Option<(String, bool)> {
@@ -1546,7 +1566,7 @@ pub async fn check_ai(in_selection: bool) {
         }
     }
     // the selection's rows are marked in the pane
-    with(|a| a.focus = range.map(|r| crate::panel::Focus { pane: crate::panel::Pane::Ai, path: path.clone(), ranges: vec![r] }));
+    with(|a| a.focus = range.map(|r| crate::panel::Focus::new(crate::panel::Pane::Ai, &path, vec![r], false)));
     // every paragraph is scored again, even one scored before and unchanged: the user re-checks on purpose (Show in
     // AI check shows the last scores without checking)
     // headings are left out and start a section; a paragraph under SHORT_WORDS words is scored with its neighbours
@@ -1775,7 +1795,7 @@ pub async fn check_plagiarism(in_selection: bool) {
         }
         a.save_matches();
         a.save_para_cache();
-        a.focus = range.map(|r| crate::panel::Focus { pane: crate::panel::Pane::Plagiarism, path: path.clone(), ranges: vec![r] });
+        a.focus = range.map(|r| crate::panel::Focus::new(crate::panel::Pane::Plagiarism, &path, vec![r], false));
         a.notice(&match n {
             0 => "no wording shared with the library found.".to_string(),
             1 => "1 passage shares wording with the library; it is underlined, and the Plagiarism pane lists it.".to_string(),

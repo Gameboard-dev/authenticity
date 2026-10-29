@@ -37,6 +37,8 @@ pub struct Detector {
     pub says: String,
     /// How far it moved the score (its weight times its result's log-odds; 0 when it does not count).
     pub moved: f64,
+    /// SlopTotal's own details for it, whole (shown when its block is opened); empty when it gives none.
+    pub details: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -172,7 +174,8 @@ fn detector(r: &Reason, share: Option<f64>, moved: f64) -> Detector {
         Some((name, what, false)) => (name.to_string(), if found.is_empty() { format!("Measures {what}.") } else { format!("Measures {what}. SlopTotal: {found}") }),
         None => (r.engine.clone(), found),
     };
-    Detector { engine: r.engine.clone(), plain: name, score: r.score * 100.0, share, says, moved }
+    let details: String = r.details.trim().chars().take(1500).collect();
+    Detector { engine: r.engine.clone(), plain: name, score: r.score * 100.0, share, says, moved, details }
 }
 
 /// The analysis's detectors as blocks: those that count for the text's language, by how far they moved the score
@@ -340,6 +343,7 @@ mod tests {
         assert_eq!(row.detectors.iter().map(|d| d.plain.as_str()).collect::<Vec<_>>(), ["Sentence rhythm", "Classifier: Fakespot RoBERTa"]);
         assert_eq!(row.detectors[0].share, Some(0.25));
         assert_eq!(row.detectors[0].says, "Measures how much predictability varies from sentence to sentence. SlopTotal: Sentence perplexity CV 0.12");
+        assert_eq!(row.detectors[0].details, "Sentence perplexity CV 0.12", "SlopTotal's details, whole, for the opened block");
         assert_eq!(row.detectors[1].says, "A trained model: it gives a probability only, no reason.");
         assert_eq!(row.uncounted.len(), 1, "E5 does not count for English");
         assert_eq!(row.overall, "", "all ran: nothing to say");

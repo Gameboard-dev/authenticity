@@ -69,13 +69,13 @@ The pane follows the note last active.
 
   | Column | What it shows |
   |---|---|
-  | My paragraph | The paragraph, with the words the hints found highlighted |
+  | My paragraph | The paragraph, with the words of Authenticity's writing patterns highlighted |
   | AI-likeness | The score the tint shows, marked with the detector that gave it |
   | Verdict | The band, with at most one reliability note (scored with its neighbours, under 80 words, or the detector's low confidence) |
-  | Why | *Load reasons* runs SlopTotal's full analysis; for GPTZero, its message ([Reasons](ai-detection.md#reasons-and-hints)) |
-  | Hints | Model-free hints: stock phrases, signposting openers, vague wording, stacked hedges, em dashes, even sentence lengths |
+  | Why | The reasons of the detector that scored the row, named at the top of the cell (SlopTotal or GPTZero), each as a collapsed block; and *Writing patterns*, when Authenticity's own rules found any ([Reasons](ai-detection.md#reasons-and-writing-patterns)) |
 
-  *Sentences* under a paragraph lists its sentences, each with its own score and hints. Sort by score or by
+  Every block in *Why* starts collapsed: its summary line gives the name and the result, and a click (or Enter or
+  Space) opens it. *Sentences* under a paragraph lists its sentences, each with its own score. Sort by score or by
   position; click a row to go to the text.
 - **History**: this note's past checks; pick one to see its scores beside the current ones
   ([History and logs](history-and-logs.md)).
