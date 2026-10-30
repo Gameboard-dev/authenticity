@@ -21,6 +21,7 @@ Most problems are explained in Authenticity's own notices and in the log pane (S
 | The plagiarism check asks for a library folder | Set *Library folder* (Settings → Plagiarism) |
 | A source you expected is not found | It is outside the library folder, in a folder never compared with, or its note changed after the index was made; *Rebuild* the library index |
 | *Embedding search* says the service does not answer | The Quarry plugin's service is not running. The check uses Authenticity's own search instead; nothing else is needed |
+| *Embedding search* says the service asks for its token, or refused it | The Quarry plugin is older than its service's token, or has not reached its service yet: update Quarry, or start its service. In a browser (Ignis), paste the token again in Quarry's settings (*Service token*) |
 | GPTZero: "the GPTZero key is missing or has expired" (401) or "does not recognise the key" (403) | Link a valid key and press *Check the key* |
 | GPTZero: "the word limit or hourly rate limit is reached" (429) | Wait, or check with SlopTotal (Authenticity offers it) |
 | Marks are not shown | Check *Show marks in notes*, *Show AI marks* and *Show similarity marks*; an edited paragraph loses its colour until it is checked again |

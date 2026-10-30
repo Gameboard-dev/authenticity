@@ -1,9 +1,10 @@
 //! The paraphrase search judged on a real draft (a developer's check, not part of the release): every candidate the
 //! content-word search finds for the draft's sentences, with its closeness (content words kept in order) and its weight
 //! (the share of their weight the source sentence holds), the counts the closeness and weight gates would flag, and,
-//! when an embedding service's similarity API answers on `--similar-port`, what it finds beside them.
+//! when an embedding service's similarity API answers on `--similar-port`, what it finds beside them. Quarry's service
+//! asks for its token (`--token`, the 64 hex digits of `service-token` in its data folder).
 //!
-//! `cargo run --release --example para_eval -- --vault DIR --library FOLDER --note NOTE [--similar-port PORT]`
+//! `cargo run --release --example para_eval -- --vault DIR --library FOLDER --note NOTE [--similar-port PORT] [--token TOKEN]`
 //! (FOLDER and NOTE are vault paths). The index is made in memory; nothing is written.
 
 use std::collections::HashMap;
@@ -15,11 +16,13 @@ use authenticity_native::{http, vault::Vault};
 use authenticity_similar::{library as lib, Index};
 use serde_json::Value;
 
-struct Similar(u16);
+struct Similar(u16, Option<String>);
 
 impl similarity::SimilarApi for Similar {
     async fn similar(&self, body: &Value) -> Result<Value, String> {
-        let r = http::request(self.0, "POST", "/similar", Some(&body.to_string()), Duration::from_secs(900))?;
+        let bearer = self.1.as_ref().map(|t| format!("Bearer {t}"));
+        let headers: Vec<(&str, &str)> = bearer.iter().map(|b| ("Authorization", b.as_str())).collect();
+        let r = http::request_with(self.0, "POST", "/similar", Some(&body.to_string()), Duration::from_secs(900), &headers)?;
         if r.status != 200 {
             return Err(format!("answered {}", r.status));
         }
@@ -106,7 +109,7 @@ fn main() {
     if let Some(port) = arg(&args, "--similar-port").and_then(|p| p.parse::<u16>().ok()) {
         let t = Instant::now();
         let asked: Vec<String> = sentences.iter().map(|s| s.1.clone()).collect();
-        match block_on(similarity::ask(&Similar(port), &asked, floor, "")) {
+        match block_on(similarity::ask(&Similar(port, arg(&args, "--token")), &asked, floor, "")) {
             Ok(similarity::Outcome::Hits(h)) => {
                 println!("\nembedding search ({:.1} s): candidates passing its cosine gate", t.elapsed().as_secs_f64());
                 for (i, hs) in h.iter().enumerate() {

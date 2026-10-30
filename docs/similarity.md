@@ -69,8 +69,10 @@ the pane says so and offers *Check the note again*.
 If the Quarry plugin is installed, Authenticity can optionally use its embedding model for the paraphrase check
 (Settings → Plagiarism → *Embedding search*, off by default; *Check* tests it). The closeness means the same either
 way; with the embedding search, the two sentences must also say the same by the model (a cosine of 0.75 or more). It
-asks only a service on this computer. When that service does not answer, the check uses Authenticity's own search and
-says so.
+asks only Quarry's service, at the address Quarry's plugin gives (this computer's, or in a browser through Ignis the
+relay on the page's own address), with the service's token, which Quarry's plugin also gives: Authenticity never
+reads or stores the token itself. When that service does not answer, or refuses the token, the check uses
+Authenticity's own search and says so.
 
 ## What it covers, and what it does not
 

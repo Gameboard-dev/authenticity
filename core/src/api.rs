@@ -9,7 +9,9 @@
 //! installed): close-paraphrase candidates from that plugin's embedding model, through its service's similarity API
 //! on this computer (`POST /similar` on 127.0.0.1, behind a version check), instead of Authenticity's own content-word
 //! search (index.rs). The service is never started from here; when it does not answer, a check falls back to the own
-//! search and says so.
+//! search and says so. Its address and its token come from Quarry's plugin API (`serviceUrl()`, `serviceToken()`;
+//! Quarry's docs/companion-plugins.md): since Quarry 2026-10-30 every request to its service carries the token
+//! (`Authorization: Bearer`), and in a browser (Ignis) the address is the relay on the page's own origin.
 
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
@@ -55,42 +57,102 @@ fn embeddings_plugin(a: &App) -> Result<JsValue, String> {
     Ok(plugin)
 }
 
-/// The service's port, as the plugin's API gives it, else the usual one.
-fn embeddings_port(plugin: &JsValue) -> u16 {
-    let api = get(plugin, "api");
-    let from_api = if get(&api, "servicePort").is_function() { call!(api, servicePort).as_f64() } else { get(&api, "servicePort").as_f64() };
-    from_api.map_or(EMBEDDINGS_PORT, |p| crate::app::port(p, EMBEDDINGS_PORT))
+/// Where the embedding service is and the token its requests carry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Service {
+    /// The address without a trailing slash: `http://127.0.0.1:8766`, or in a browser `https://<page>/relay/quarry`.
+    pub url: String,
+    /// The service's token (Quarry's `serviceToken()`); None from a Quarry older than the token, or before Quarry has
+    /// reached its service.
+    pub token: Option<String>,
 }
 
-/// Whether a check uses the embedding search now: the setting on and the plugin there; its service's port, or why not.
+/// A string a function of the plugin's API returns (or the property itself, from an older API), trimmed; None when
+/// missing or empty.
+fn api_text(api: &JsValue, name: &str) -> Option<String> {
+    let f = get(api, name);
+    let v = if f.is_function() { js::apply(&f, api, &[]) } else { f };
+    v.as_string().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// The service as Quarry's plugin API gives it: `serviceUrl()` and `serviceToken()`; from an older Quarry,
+/// `servicePort` on 127.0.0.1, else the usual port, without a token.
+fn embeddings_service(plugin: &JsValue) -> Service {
+    let api = get(plugin, "api");
+    service_from(api_text(&api, "serviceUrl"), get(&api, "servicePort").as_f64().or_else(|| {
+        let f = get(&api, "servicePort");
+        f.is_function().then(|| js::apply(&f, &api, &[]).as_f64()).flatten()
+    }), api_text(&api, "serviceToken"))
+}
+
+/// The service from what the API gave (testable without JavaScript): an http(s) address as given (a trailing slash
+/// taken off), else 127.0.0.1 on the port (checked), else on the usual port.
+pub fn service_from(url: Option<String>, port: Option<f64>, token: Option<String>) -> Service {
+    let url = url.filter(|u| u.starts_with("http://") || u.starts_with("https://")).map(|u| u.trim_end_matches('/').to_string());
+    let url = url.unwrap_or_else(|| format!("http://127.0.0.1:{}", port.map_or(EMBEDDINGS_PORT, |p| crate::app::port(p, EMBEDDINGS_PORT))));
+    Service { url, token }
+}
+
+/// Whether a check uses the embedding search now: the setting on and the plugin there; its service, or why not.
 /// Whether the service answers is learnt when it is asked (a refused connection says so, and the check falls back).
-pub fn embeddings_status(a: &App) -> Result<u16, String> {
+pub fn embeddings_status(a: &App) -> Result<Service, String> {
     if !a.settings.paraphrase_embeddings {
         return Err("the embedding search is off".into());
     }
-    Ok(embeddings_port(&embeddings_plugin(a)?))
+    Ok(embeddings_service(&embeddings_plugin(a)?))
 }
 
-/// A POST to the embedding service on this computer.
-async fn post_similar(port: u16, path: &str, body: &Value) -> Result<Value, String> {
-    let request_url = with(|a| get(&a.obs, "requestUrl")).ok_or("the plugin is unloading")?;
-    let req = obj! { url: format!("http://127.0.0.1:{port}{path}"), method: "POST", contentType: "application/json", body: body.to_string(), throw: false };
-    let res = js::wait(js::apply(&request_url, &JsValue::NULL, &[req])).await.map_err(|_| format!("its service does not answer on port {port} (it is started from its own plugin)"))?;
-    let status = get(&res, "status").as_f64().unwrap_or(0.0) as u16;
-    let v: Value = serde_json::from_str(&str(&get(&res, "text"))).unwrap_or(Value::Null);
+/// Whether `url` is on the page's own origin (a browser through Ignis): such a request goes with the page's own
+/// fetch, which carries the Cloudflare Access sign-in; Obsidian's requestUrl would send it from Ignis's server instead.
+fn same_origin(url: &str) -> bool {
+    let origin = str(&get(&get(&js::global(), "location"), "origin"));
+    origin.starts_with("http") && (url == origin || url.starts_with(&format!("{origin}/")))
+}
+
+/// A POST to the embedding service, with its token: (status, the answer's text).
+async fn send(service: &Service, path: &str, body: &Value) -> Result<(u16, String), JsValue> {
+    let url = format!("{}{path}", service.url);
+    let headers = JsValue::from(js_sys::Object::new());
+    set(&headers, "Content-Type", "application/json");
+    if let Some(t) = &service.token {
+        set(&headers, "Authorization", format!("Bearer {t}"));
+    }
+    if same_origin(&url) {
+        let init = obj! { method: "POST", headers: headers, body: body.to_string() };
+        let res = js::wait(js::apply(&get(&js::global(), "fetch"), &js::global(), &[url.into(), init])).await?;
+        let text = js::wait(call!(res, text)).await?;
+        return Ok((get(&res, "status").as_f64().unwrap_or(0.0) as u16, str(&text)));
+    }
+    let request_url = with(|a| get(&a.obs, "requestUrl")).ok_or(JsValue::NULL)?;
+    let req = obj! { url: url, method: "POST", headers: headers, body: body.to_string(), throw: false };
+    let res = js::wait(js::apply(&request_url, &JsValue::NULL, &[req])).await?;
+    Ok((get(&res, "status").as_f64().unwrap_or(0.0) as u16, str(&get(&res, "text"))))
+}
+
+/// A POST to the embedding service: its JSON answer, or what went wrong in a sentence.
+async fn post_similar(service: &Service, path: &str, body: &Value) -> Result<Value, String> {
+    let (status, text) = send(service, path, body).await.map_err(|_| format!("its service does not answer at {} (it is started from its own plugin)", service.url))?;
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    answer(status, v, service.token.is_some())
+}
+
+/// The service's answer as a result (testable without JavaScript).
+pub fn answer(status: u16, v: Value, had_token: bool) -> Result<Value, String> {
     match status {
         200 => Ok(v),
+        401 if !had_token => Err("its service asks for its token, which the Quarry plugin has not given yet (update Quarry, or let it reach its service first)".into()),
+        401 => Err("its service refused the token the Quarry plugin gave (in a browser, paste the token again in Quarry's settings)".into()),
         404 => Err("its service has no similarity API (update the Quarry plugin)".into()),
         _ => Err(format!("its service answered {status}{}", v["error"].as_str().map(|e| format!(": {}", e.chars().take(300).collect::<String>())).unwrap_or_default())),
     }
 }
 
-/// The embedding service on this computer, for similarity::ask.
-struct Embeddings(u16);
+/// The embedding service, for similarity::ask.
+struct Embeddings(Service);
 
 impl similarity::SimilarApi for Embeddings {
     async fn similar(&self, body: &Value) -> Result<Value, String> {
-        post_similar(self.0, "/similar", body).await
+        post_similar(&self.0, "/similar", body).await
     }
 }
 
@@ -98,14 +160,15 @@ impl similarity::SimilarApi for Embeddings {
 /// plugin (installed, enabled), reaches its service on 127.0.0.1, checks the similarity API's version, and sends one
 /// short probe sentence. It never starts the service.
 pub async fn check_embeddings() -> String {
-    let Some(port) = with(|a| embeddings_plugin(a).map(|p| embeddings_port(&p))) else { return "the plugin is unloading.".into() };
-    let port = match port {
-        Ok(p) => p,
+    let Some(service) = with(|a| embeddings_plugin(a).map(|p| embeddings_service(&p))) else { return "the plugin is unloading.".into() };
+    let service = match service {
+        Ok(s) => s,
         Err(e) => return format!("Not available: {e}."),
     };
-    match post_similar(port, "/similar", &similarity::first_request(&[PROBE], "cpu")).await.and_then(|v| similarity::check_api(&v).map(|_| v)) {
-        Ok(v) if v["gpu_shortage"].is_object() => format!("Answers on port {port} (similarity API {}); its models would need room on the graphics card, which it asks about when used.", similarity::SIMILAR_API),
-        Ok(_) => format!("OK: the Quarry plugin's embedding search answers on port {port} (similarity API {}).", similarity::SIMILAR_API),
+    let at = &service.url;
+    match post_similar(&service, "/similar", &similarity::first_request(&[PROBE], "cpu")).await.and_then(|v| similarity::check_api(&v).map(|_| v)) {
+        Ok(v) if v["gpu_shortage"].is_object() => format!("Answers at {at} (similarity API {}); its models would need room on the graphics card, which it asks about when used.", similarity::SIMILAR_API),
+        Ok(_) => format!("OK: the Quarry plugin's embedding search answers at {at} (similarity API {}).", similarity::SIMILAR_API),
         Err(e) => format!("Not available: {e}."),
     }
 }
@@ -115,7 +178,7 @@ pub async fn check_embeddings() -> String {
 /// for plagiarism does), each with its candidates from a closeness a little below the setting
 /// (`similarity::fetch_floor`, returned with them) so the Plagiarism pane can change the setting without asking again;
 /// `similarity::filter` applies the setting. The GPU question is asked if the service's models have no room.
-pub async fn paraphrase_embeddings(port: u16, text: &str, base: u32, verbatim: &[Match], ask_all: bool, run: Option<u64>) -> Result<(Vec<Match>, f64), String> {
+pub async fn paraphrase_embeddings(service: Service, text: &str, base: u32, verbatim: &[Match], ask_all: bool, run: Option<u64>) -> Result<(Vec<Match>, f64), String> {
     let (settings, closeness) = with(|a| (a.settings.similarity(), a.thresholds().closeness)).ok_or("the plugin is unloading")?;
     let floor = similarity::fetch_floor(closeness);
     let sentences = similarity::paraphrase_sentences(text, &settings, &crate::index::covered(text, base, verbatim));
@@ -132,7 +195,7 @@ pub async fn paraphrase_embeddings(port: u16, text: &str, base: u32, verbatim: &
     }
     let mut gpu = String::new();
     let got = loop {
-        match similarity::ask(&Embeddings(port), &asked, floor, &gpu).await? {
+        match similarity::ask(&Embeddings(service.clone()), &asked, floor, &gpu).await? {
             Outcome::Hits(h) => break h,
             Outcome::Shortage(s) => {
                 let short = obsidian_kit::gpu::Shortage {
@@ -169,8 +232,8 @@ pub async fn paraphrase_embeddings(port: u16, text: &str, base: u32, verbatim: &
 /// embedding search was wanted but did not answer.
 pub async fn paraphrase(path: &str, text: &str, base: u32, verbatim: &[Match], ask_all: bool, run: Option<u64>) -> Result<(Vec<Match>, f64, Option<String>), String> {
     let mut fell_back = None;
-    if let Some(Ok(port)) = with(|a| embeddings_status(a)) {
-        match paraphrase_embeddings(port, text, base, verbatim, ask_all, run).await {
+    if let Some(Ok(service)) = with(|a| embeddings_status(a)) {
+        match paraphrase_embeddings(service, text, base, verbatim, ask_all, run).await {
             Ok((m, floor)) => return Ok((m, floor, None)),
             Err(e) if e == crate::sloptotal::CANCELLED => return Err(e),
             Err(e) => fell_back = Some(format!("The embedding search did not answer ({e}); Authenticity's own search was used.")),
@@ -369,4 +432,31 @@ pub fn object() -> JsValue {
         serde_wasm_bindgen::to_value(&h).unwrap_or(JsValue::NULL)
     }));
     o.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_service_from_quarrys_api() {
+        let t = Some("ab".repeat(32));
+        assert_eq!(service_from(Some("http://127.0.0.1:9000/".into()), Some(8766.0), t.clone()), Service { url: "http://127.0.0.1:9000".into(), token: t.clone() }, "serviceUrl() wins, its trailing slash off");
+        assert_eq!(service_from(Some("https://vault.example.org/relay/quarry".into()), None, t.clone()).url, "https://vault.example.org/relay/quarry", "Ignis's relay, as given");
+        assert_eq!(service_from(None, Some(9001.0), None), Service { url: "http://127.0.0.1:9001".into(), token: None }, "an older Quarry: its servicePort");
+        assert_eq!(service_from(None, None, None).url, "http://127.0.0.1:8766");
+        for odd in ["javascript:alert(1)", "file:///etc/passwd", "127.0.0.1:8766", "/relay/quarry"] {
+            assert_eq!(service_from(Some(odd.into()), None, None).url, "http://127.0.0.1:8766", "{odd}: not a web address, the usual one instead");
+        }
+        assert_eq!(service_from(None, Some(80.0), None).url, "http://127.0.0.1:8766", "a port below 1024 is not the service's");
+    }
+
+    #[test]
+    fn a_refusal_says_what_to_do() {
+        assert_eq!(answer(200, json!({"a": 1}), true), Ok(json!({"a": 1})));
+        assert!(answer(401, Value::Null, false).unwrap_err().contains("not given yet"));
+        assert!(answer(401, Value::Null, true).unwrap_err().contains("paste the token again"));
+        assert!(answer(404, Value::Null, true).unwrap_err().contains("no similarity API"));
+        assert_eq!(answer(500, json!({"error": "boom"}), true).unwrap_err(), "its service answered 500: boom");
+    }
 }

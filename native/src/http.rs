@@ -22,6 +22,15 @@ pub struct Reply {
 
 /// A request to 127.0.0.1:`port`. Err: nothing answered (the reason).
 pub fn request(port: u16, method: &str, path: &str, body: Option<&str>, timeout: Duration) -> Result<Reply, String> {
+    request_with(port, method, path, body, timeout, &[])
+}
+
+/// `request` with extra header lines (`Authorization: Bearer <token>` for Quarry's service). A header with a line
+/// break is refused: it would end the request's head.
+pub fn request_with(port: u16, method: &str, path: &str, body: Option<&str>, timeout: Duration, headers: &[(&str, &str)]) -> Result<Reply, String> {
+    if headers.iter().any(|(k, v)| format!("{k}{v}").contains(['\r', '\n'])) {
+        return Err("a header holds a line break".into());
+    }
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let mut s = TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).map_err(|e| e.to_string())?;
     s.set_read_timeout(Some(timeout)).ok();
@@ -31,6 +40,9 @@ pub fn request(port: u16, method: &str, path: &str, body: Option<&str>, timeout:
     // answer on Windows (2026-10-29: 587 of 658 KB arrived, then error 10054). The answer is read up to its length
     // instead, and the connection dropped then.
     let mut head = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\n");
+    for (k, v) in headers {
+        head += &format!("{k}: {v}\r\n");
+    }
     if method != "GET" {
         head += &format!("Content-Type: application/json\r\nContent-Length: {}\r\n", body.len());
     }
@@ -240,6 +252,22 @@ mod tests {
         assert_eq!(reply, Reply { status: 200, body: "{\"got\":{\"text\":\"hi\"}}".into() });
         let r = t.join().unwrap();
         assert_eq!((r.method.as_str(), r.path.as_str(), r.header("host")), ("POST", "/x", Some(format!("127.0.0.1:{port}").as_str())));
+    }
+
+    #[test]
+    fn extra_headers_are_sent_and_a_line_break_is_refused() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let t = std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let r = read_request(&mut s).unwrap();
+            respond(&mut s, 200, "{}");
+            r
+        });
+        request_with(port, "POST", "/similar", Some("{}"), Duration::from_secs(5), &[("Authorization", "Bearer t")]).unwrap();
+        assert_eq!(t.join().unwrap().header("authorization"), Some("Bearer t"));
+        let e = request_with(port, "GET", "/", None, Duration::from_secs(1), &[("Authorization", "Bearer t\r\nX-Evil: 1")]);
+        assert_eq!(e.unwrap_err(), "a header holds a line break", "refused before connecting");
     }
 
     /// A server that keeps the connection open after a large answer (as a keep-alive server does): the answer is read
